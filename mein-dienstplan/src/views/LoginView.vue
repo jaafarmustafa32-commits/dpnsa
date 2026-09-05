@@ -1,9 +1,4 @@
 <template>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>login</title>
-  </head>
   <div class="login-container">
     <div class="login-card">
 
@@ -17,18 +12,18 @@
 
       <!-- Login Formular -->
       <form @submit.prevent="handleLogin" class="login-form">
-        <!-- E-Mail-Adresse (Supabase Login) -->
+        <!-- E-Mail-Adresse / Benutzername -->
         <div class="form-group">
-          <label for="username">E-Mail-Adresse</label>
+          <label for="username">Benutzername / E-Mail</label>
           <div class="input-wrapper">
             <i class="fa-solid fa-envelope input-icon"></i>
             <input
                 id="username"
                 v-model="username"
-                type="email"
-                placeholder="name@beispiel.at"
+                type="text"
+                placeholder="Ibo ist der beste"
                 required
-                autocomplete="email"
+                autocomplete="username"
             />
           </div>
         </div>
@@ -87,7 +82,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { supabase } from '../config/supabase.js'
+import { supabase } from '@/config/supabase.js'
 
 const router = useRouter()
 
@@ -102,17 +97,36 @@ const handleLogin = async () => {
   isLoading.value = true
 
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: username.value,
-      password: password.value,
-    })
+    // Abfrage an die Supabase-Tabelle 'app_users'
+    const { data, error } = await supabase
+        .from('app_users')
+        .select('*')
+        .eq('username', username.value.trim())
+        .eq('password', password.value.trim())
+        .maybeSingle()
 
-    if (error) throw error
+    if (error) {
+      console.error('Supabase Fehlerdetails:', error)
+      errorMessage.value = 'Datenbank-Fehler: ' + error.message
+      return
+    }
 
-    // Erfolgreich eingeloggt -> Weiterleitung zur Home-Seite
-    router.push('/home')
-  } catch (error) {
-    errorMessage.value = 'E-Mail oder Passwort ist falsch.'
+    if (!data) {
+      errorMessage.value = 'Falscher Benutzername oder Passwort!'
+    } else {
+      // Benutzerdaten lokal speichern
+      localStorage.setItem('currentUser', JSON.stringify(data))
+
+      // Rollenbasierte Weiterleitung
+      if (data.role === 'admin') {
+        router.push('/admin')
+      } else {
+        router.push('/home')
+      }
+    }
+  } catch (err) {
+    console.error('Unerwarteter Fehler:', err)
+    errorMessage.value = 'Verbindungsfehler zur Datenbank.'
   } finally {
     isLoading.value = false
   }

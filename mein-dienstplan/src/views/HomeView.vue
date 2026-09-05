@@ -12,9 +12,48 @@
         </div>
       </router-link>
 
-      <button class="menu-toggle" @click="isMobileMenuOpen = !isMobileMenuOpen" aria-label="Menü öffnen">
-        <i class="fa-solid" :class="isMobileMenuOpen ? 'fa-xmark' : 'fa-bars'"></i>
-      </button>
+      <div class="header-actions">
+        <!-- BENACHRICHTIGUNGS-GLOCKE (Unverändert im Light Mode) -->
+        <div class="notifications-wrapper" ref="notifDropdownRef">
+          <button @click="toggleNotifications" class="btn-notification-bell" :class="{ 'has-unread': unreadNotifications.length > 0 }" aria-label="Benachrichtigungen">
+            <i class="fa-solid fa-bell"></i>
+            <span v-if="unreadNotifications.length > 0" class="badge-count">
+              {{ unreadNotifications.length }}
+            </span>
+          </button>
+
+          <!-- DROPDOWN FÜR BENACHRICHTIGUNGEN -->
+          <div v-if="showNotificationsDropdown" class="notifications-dropdown">
+            <div class="dropdown-header">
+              <h4>Benachrichtigungen</h4>
+              <button v-if="unreadNotifications.length > 0" @click="markAllAsRead" class="btn-text-action">
+                Alle gelesen
+              </button>
+            </div>
+
+            <div class="dropdown-body">
+              <div v-if="notifications.length === 0" class="no-notifications">
+                Keine Benachrichtigungen vorhanden.
+              </div>
+              <div
+                  v-for="notif in notifications"
+                  :key="notif.id"
+                  class="notification-item"
+                  :class="{ unread: !notif.is_read }"
+                  @click="markAsRead(notif.id)"
+              >
+                <div class="notif-title">{{ notif.title }}</div>
+                <div class="notif-msg">{{ notif.message }}</div>
+                <div class="notif-time">{{ formatDate(notif.created_at) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="menu-toggle" @click="isMobileMenuOpen = !isMobileMenuOpen" aria-label="Menü öffnen">
+          <i class="fa-solid" :class="isMobileMenuOpen ? 'fa-xmark' : 'fa-bars'"></i>
+        </button>
+      </div>
 
       <nav class="nav-buttons" :class="{ show: isMobileMenuOpen }">
         <router-link to="/home" class="btn-nav active" @click="closeMobileMenu">
@@ -25,6 +64,9 @@
         </router-link>
         <router-link to="/anweisungen" class="btn-nav" @click="closeMobileMenu">
           <i class="fa-solid fa-file-pdf"></i> Anweisungen
+        </router-link>
+        <router-link to="/gehalt" class="btn-nav" @click="closeMobileMenu">
+          <i class="fa-solid fa-file-invoice-dollar"></i> Gehalt
         </router-link>
         <router-link to="/kontakt" class="btn-nav" @click="closeMobileMenu">
           <i class="fa-solid fa-paper-plane"></i> Büro Kontakt
@@ -69,11 +111,11 @@
     <!-- Steuerung -->
     <section class="calendar-controls">
       <div class="month-nav">
-        <i class="fa-solid fa-circle-chevron-left" style="color: #2563eb; font-size: 1.2rem; cursor: pointer;" @click="changeMonth(-1)"></i>
+        <i class="fa-solid fa-circle-chevron-left nav-arrow" @click="changeMonth(-1)"></i>
         <div class="month-title">
           {{ monthNames[currentMonth] }} <span>{{ currentYear }}</span>
         </div>
-        <i class="fa-solid fa-circle-chevron-right" style="color: #2563eb; font-size: 1.2rem; cursor: pointer;" @click="changeMonth(1)"></i>
+        <i class="fa-solid fa-circle-chevron-right nav-arrow" @click="changeMonth(1)"></i>
       </div>
 
       <div class="view-switch">
@@ -94,57 +136,55 @@
 
     <!-- GRID / LISTE ANSICHT -->
     <template v-if="viewMode === 'grid' || viewMode === 'list'">
-      <div class="calendar-grid" :class="{ 'list-view': viewMode === 'list' }">
-        <template v-if="viewMode === 'grid'">
-          <div v-for="offset in monthOffset" :key="'offset-' + offset" class="day-card offset-day desktop-only"></div>
-        </template>
+      <div :class="viewMode === 'list' ? 'calendar-container-list-narrow' : 'calendar-container-narrow'">
+        <div class="calendar-grid" :class="{ 'list-view': viewMode === 'list' }">
+          <div
+              v-for="day in calendarDays"
+              :key="day.dateKey"
+              class="day-card"
+              :class="day.cardClass"
+              @click="openDetails(day.dateKey)"
+          >
+            <div class="day-header">
+              <span class="day-number">{{ day.dayNum }}</span>
+              <span class="day-name">{{ day.dayName }}</span>
+            </div>
 
-        <div
-            v-for="day in calendarDays"
-            :key="day.dateKey"
-            class="day-card"
-            :class="day.cardClass"
-            @click="openDetails(day)"
-        >
-          <div class="day-header">
-            <span class="day-number">{{ day.dayNum }}</span>
-            <span class="day-name">{{ day.dayName }}</span>
-          </div>
+            <div class="day-body">
+              <template v-if="day.shift && day.shift.vacation">
+                <span class="shift-badge badge-vacation">Urlaub</span>
+              </template>
 
-          <div class="day-body">
-            <template v-if="day.shift && !day.shift.vacation">
-              <div class="shift-top-row">
-                <span class="shift-badge" :class="day.shift.class">{{ day.shift.badge }}</span>
-                <span class="shift-time-badge" :class="day.shift.isNight ? 'time-night' : 'time-day'">
-                  <i class="fa-regular fa-clock"></i> {{ day.shift.time }}
-                </span>
-              </div>
-              <div class="shift-details">
-                <strong class="shift-title">{{ day.shift.title }}</strong>
-                <div v-if="day.shift.ort && day.shift.ort !== '-'" class="shift-location">
-                  📍 {{ day.shift.ort }}
+              <template v-else-if="day.shift && day.shift.sick">
+                <span class="shift-badge badge-sick">Krank</span>
+              </template>
+
+              <template v-else-if="day.shift && !day.shift.vacation && !day.shift.sick">
+                <div class="shift-top-row">
+                  <span class="shift-badge" :class="day.shift.class">{{ day.shift.badge }}</span>
+                  <span v-if="day.shift.ort && day.shift.ort !== '-'" class="shift-ort-badge">
+                    {{ day.shift.ort }}
+                  </span>
                 </div>
-              </div>
-            </template>
+                <div class="shift-details">
+                  <span class="shift-time-badge" :class="day.shift.isNight ? 'time-night' : 'time-day'">
+                    <i class="fa-regular fa-clock"></i> {{ day.shift.time }}
+                  </span>
+                </div>
+              </template>
 
-            <template v-else-if="day.shift && day.shift.vacation">
-              <span class="shift-badge badge-vacation">Urlaub</span>
-              <div class="shift-details">
-                <strong class="shift-title">Erholungsurlaub</strong>
-              </div>
-            </template>
-
-            <template v-else>
-              <span class="shift-badge badge-off">Frei</span>
-            </template>
+              <template v-else>
+                <span class="shift-badge badge-off">Frei</span>
+              </template>
+            </div>
           </div>
         </div>
       </div>
     </template>
 
-    <!-- QUERFORMAT TABELLEN-ANSICHT -->
+    <!-- QUERFORMAT TABELLEN-ANSICHT (KOMPAKT - NUR PC) -->
     <template v-else-if="viewMode === 'landscape'">
-      <div class="landscape-fullscreen-container">
+      <div class="landscape-fullscreen-container desktop-only-block">
         <table class="landscape-table">
           <thead>
           <tr class="row-dates">
@@ -165,18 +205,19 @@
                 :key="'shift-' + day.dateKey"
                 :class="[
                   day.isWeekend ? 'weekend' : '',
-                  day.shift ? (day.shift.vacation ? 'cell-vacation' : (day.shift.isNight ? 'cell-night' : 'cell-day')) : 'is-off'
+                  day.shift ? (day.shift.vacation ? 'cell-vacation' : (day.shift.sick ? 'cell-sick' : (day.shift.isNight ? 'cell-night' : 'cell-day'))) : 'is-off',
+                  day.dateKey === todayDateKey ? 'cell-today-highlight' : ''
                 ]"
-                @click="openDetails(day)"
+                @click="openDetails(day.dateKey)"
             >
-              <template v-if="day.shift && !day.shift.vacation">
-                <span class="shift-badge landscape-badge" :class="day.shift.class">{{ day.shift.badge }}</span>
-                <span class="landscape-time">{{ day.shift.time }}</span>
-                <span v-if="day.shift.ort && day.shift.ort !== '-'" class="landscape-time" style="color: #60a5fa;">📍 {{ day.shift.ort }}</span>
-              </template>
-              <template v-else-if="day.shift && day.shift.vacation">
+              <template v-if="day.shift && day.shift.vacation">
                 <span class="shift-badge badge-vacation landscape-badge">URL</span>
-                <span class="landscape-time">Urlaub</span>
+              </template>
+              <template v-else-if="day.shift && day.shift.sick">
+                <span class="shift-badge badge-sick landscape-badge">KRK</span>
+              </template>
+              <template v-else-if="day.shift && !day.shift.vacation && !day.shift.sick">
+                <span class="shift-badge landscape-badge" :class="day.shift.class">{{ day.shift.badge }}</span>
               </template>
               <template v-else>
                 <span class="off-text-landscape">Frei</span>
@@ -201,7 +242,21 @@
       </div>
 
       <div class="modal-body">
-        <template v-if="selectedDay.shift && !selectedDay.shift.vacation">
+        <template v-if="selectedDay.shift && selectedDay.shift.vacation">
+          <div class="status-info orange">
+            <i class="fa-solid fa-umbrella-beach"></i>
+            <span>Erholungsurlaub eingetragen.</span>
+          </div>
+        </template>
+
+        <template v-else-if="selectedDay.shift && selectedDay.shift.sick">
+          <div class="status-info red">
+            <i class="fa-solid fa-user-injured"></i>
+            <span>Krank / Abwesend gemeldet.</span>
+          </div>
+        </template>
+
+        <template v-else-if="selectedDay.shift && !selectedDay.shift.vacation && !selectedDay.shift.sick">
           <div class="detail-row">
             <span class="label">Kürzel:</span>
             <span class="shift-badge" :class="selectedDay.shift.class">{{ selectedDay.shift.badge }}</span>
@@ -212,7 +267,7 @@
           </div>
           <div class="detail-row" v-if="selectedDay.shift.ort && selectedDay.shift.ort !== '-'">
             <span class="label">Ort / Pavillon:</span>
-            <span style="color: #60a5fa; font-weight: 600;">📍 {{ selectedDay.shift.ort }}</span>
+            <span style="color: #2196F3; font-weight: 600;">{{ selectedDay.shift.ort }}</span>
           </div>
           <div class="detail-row">
             <span class="label">Dienstzeit:</span>
@@ -225,15 +280,8 @@
           </div>
         </template>
 
-        <template v-else-if="selectedDay.shift && selectedDay.shift.vacation">
-          <div class="status-info green">
-            <i class="fa-solid fa-umbrella-beach"></i>
-            <span>Erholungsurlaub eingetragen.</span>
-          </div>
-        </template>
-
         <template v-else>
-          <div class="status-info gray">
+          <div class="status-info green">
             <i class="fa-solid fa-bed"></i>
             <span>Dienstfreier Tag. Keine Schicht eingeteilt.</span>
           </div>
@@ -250,7 +298,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { supabase } from '../config/supabase.js'
+import { supabase } from '@/config/supabase.js'
 
 const router = useRouter()
 const isMobileMenuOpen = ref(false)
@@ -259,116 +307,154 @@ const selectedDay = ref(null)
 const isMobile = ref(false)
 const isLightMode = ref(false)
 
-const userName = ref('Wird geladen...')
+const userName = ref('Mitarbeiter')
+const currentUserId = ref(null)
 
-const currentYear = ref(2026)
-const currentMonth = ref(7) // August (0-index)
+const notifications = ref([])
+const unreadNotifications = ref([])
+const showNotificationsDropdown = ref(false)
+const notifDropdownRef = ref(null)
+
+const now = new Date()
+const currentYear = ref(now.getFullYear())
+const currentMonth = ref(now.getMonth())
 
 const monthNames = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
 const daysOfWeekNames = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
 const shiftData = ref({})
 
-// Hilfsfunktion: E-Mail in einen schönen Namen umwandeln (falls kein Profilname existiert)
-const formatNameFromEmail = (email) => {
-  if (!email) return 'Mitarbeiter'
-  const namePart = email.split('@')[0]
-  const parts = namePart.split(/[._-]/)
-  return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+const todayDateKey = computed(() => {
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+})
+
+const fetchSchedulesFromSupabase = async () => {
+  if (!currentUserId.value) return
+
+  try {
+    const map = {}
+    const { data: scheduleData, error: scheduleError } = await supabase
+        .from('schedules')
+        .select('*')
+        .eq('user_id', currentUserId.value)
+
+    if (!scheduleError && scheduleData) {
+      scheduleData.forEach(item => {
+        const isNight = item.is_night || false
+        const isSick = item.status === 'sick' || item.sick || false
+        map[item.date] = {
+          time: item.shift_time || (isNight ? '19:00-07:00' : '07:00-19:00'),
+          title: item.ort ? item.ort : 'Dienst',
+          ort: item.ort || '-',
+          badge: isSick ? 'KRK' : (item.shift_type || (isNight ? 'ND' : 'TD')),
+          class: isSick ? 'badge-sick' : (isNight ? 'badge-nd' : 'badge-td'),
+          isNight: isNight,
+          sick: isSick,
+          hours: Number(item.hours) || 0,
+          vacation: item.vacation || false,
+          instruction: item.instruction || ''
+        }
+      })
+    }
+
+    const { data: vacationData, error: vacationError } = await supabase
+        .from('vacations')
+        .select('*')
+        .eq('user_id', currentUserId.value)
+        .eq('status', 'approved')
+
+    if (!vacationError && vacationData) {
+      vacationData.forEach(vac => {
+        const start = new Date(vac.start_date)
+        const end = new Date(vac.end_date)
+
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const y = d.getFullYear()
+          const m = String(d.getMonth() + 1).padStart(2, '0')
+          const dayStr = String(d.getDate()).padStart(2, '0')
+          const dateKey = `${y}-${m}-${dayStr}`
+
+          map[dateKey] = {
+            time: 'Ganztägig',
+            title: 'Erholungsurlaub',
+            ort: 'Urlaub',
+            badge: 'Urlaub',
+            class: 'badge-vacation',
+            isNight: false,
+            sick: false,
+            hours: 0,
+            vacation: true,
+            instruction: vac.reason ? `Grund: ${vac.reason}` : 'Erholungsurlaub genehmigt.'
+          }
+        }
+      })
+    }
+
+    shiftData.value = map
+  } catch (err) {
+    console.error('Unerwarteter Fehler:', err)
+  }
 }
 
-const fetchUserDataAndSchedules = async () => {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+const fetchNotifications = async () => {
+  if (!currentUserId.value) return
 
-  // 1. Benutzername ermitteln (Priorität: profiles Tabelle -> user_metadata -> E-Mail formatiert)
-  let currentUserName = ''
-
-  const { data: profileData } = await supabase
-      .from('profiles')
-      .select('full_name, name')
-      .eq('id', user.id)
-      .single()
-
-  if (profileData) {
-    currentUserName = profileData.full_name || profileData.name || ''
-  }
-
-  if (!currentUserName && user.user_metadata?.full_name) {
-    currentUserName = user.user_metadata.full_name
-  }
-
-  if (!currentUserName) {
-    currentUserName = formatNameFromEmail(user.email)
-  }
-
-  userName.value = currentUserName
-
-  // 2. Schichten aus der 'schedules'-Tabelle laden
   const { data, error } = await supabase
-      .from('schedules')
+      .from('notifications')
       .select('*')
-      .or(`user_id.eq.${user.id},employee_name.ilike.%${currentUserName}%`)
-      .eq('month', currentMonth.value + 1)
-      .eq('year', currentYear.value)
+      .eq('user_id', currentUserId.value)
+      .order('created_at', { ascending: false })
 
-  if (!error && data && data.length > 0) {
-    const map = {}
-
-    data.forEach(row => {
-      let shiftsArray = row.shifts
-
-      if (typeof shiftsArray === 'string') {
-        try { shiftsArray = JSON.parse(shiftsArray) } catch (e) { shiftsArray = [] }
-      }
-
-      if (Array.isArray(shiftsArray)) {
-        const year = currentYear.value
-        const month = currentMonth.value
-        const totalDays = new Date(year, month + 1, 0).getDate()
-
-        shiftsArray.forEach((item, index) => {
-          const dayNum = index + 1
-          if (dayNum <= totalDays) {
-            const dayStr = dayNum < 10 ? '0' + dayNum : '' + dayNum
-            const monthStr = (month + 1) < 10 ? '0' + (month + 1) : '' + (month + 1)
-            const dateKey = `${year}-${monthStr}-${dayStr}`
-
-            const schichtVal = typeof item === 'object' && item !== null ? item.schicht : item
-            const ortVal = typeof item === 'object' && item !== null ? item.ort : '-'
-
-            if (!schichtVal || schichtVal.toLowerCase() === 'frei') {
-              // Frei
-            } else if (schichtVal.toLowerCase().includes('urlaub')) {
-              map[dateKey] = { vacation: true, hours: 0, ort: '-' }
-            } else {
-              let hoursCalc = 8
-              if (schichtVal.includes('-')) {
-                const parts = schichtVal.split('-')
-                const startHour = parseInt(parts[0].trim().split(':')[0])
-                const endHour = parseInt(parts[1].trim().split(':')[0])
-                hoursCalc = endHour >= startHour ? endHour - startHour : (24 - startHour) + endHour
-              }
-
-              map[dateKey] = {
-                badge: "KH",
-                class: "badge-kh",
-                title: "Regeldienst",
-                time: schichtVal,
-                ort: ortVal,
-                hours: hoursCalc,
-                isNight: schichtVal.includes("19:00"),
-                instruction: "Pünktlich zum Dienst erscheinen."
-              }
-            }
-          }
-        })
-      }
-    })
-    shiftData.value = map
-  } else {
-    shiftData.value = {}
+  if (!error && data) {
+    notifications.value = data
+    unreadNotifications.value = data.filter(n => !n.is_read)
   }
+}
+
+const toggleNotifications = () => {
+  showNotificationsDropdown.value = !showNotificationsDropdown.value
+}
+
+const markAsRead = async (id) => {
+  const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', id)
+
+  if (!error) {
+    notifications.value = notifications.value.map(n => n.id === id ? { ...n, is_read: true } : n)
+    unreadNotifications.value = unreadNotifications.value.filter(n => n.id !== id)
+  }
+}
+
+const markAllAsRead = async () => {
+  const unreadIds = unreadNotifications.value.map(n => n.id)
+  if (unreadIds.length === 0) return
+
+  const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .in('id', unreadIds)
+
+  if (!error) {
+    notifications.value = notifications.value.map(n => ({ ...n, is_read: true }))
+    unreadNotifications.value = []
+  }
+}
+
+const handleClickOutside = (event) => {
+  if (notifDropdownRef.value && !notifDropdownRef.value.contains(event.target)) {
+    showNotificationsDropdown.value = false
+  }
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 const toggleLightMode = () => {
@@ -381,9 +467,7 @@ const toggleLightMode = () => {
 }
 
 const closeMobileMenu = () => {
-  if (window.innerWidth <= 768) {
-    isMobileMenuOpen.value = false
-  }
+  isMobileMenuOpen.value = false
 }
 
 const checkScreenSize = () => {
@@ -396,12 +480,25 @@ const checkScreenSize = () => {
 onMounted(async () => {
   checkScreenSize()
   window.addEventListener('resize', checkScreenSize)
-  document.body.style.backgroundColor = '#0b0f19'
-  await fetchUserDataAndSchedules()
+  document.addEventListener('click', handleClickOutside)
+
+  const userJson = localStorage.getItem('currentUser')
+  if (userJson) {
+    const user = JSON.parse(userJson)
+    userName.value = user.name || user.username || 'Mitarbeiter'
+    currentUserId.value = user.id
+  } else {
+    router.push('/')
+    return
+  }
+
+  await fetchSchedulesFromSupabase()
+  await fetchNotifications()
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkScreenSize)
+  document.removeEventListener('click', handleClickOutside)
 })
 
 const changeMonth = async (delta) => {
@@ -413,18 +510,16 @@ const changeMonth = async (delta) => {
     currentMonth.value = 11
     currentYear.value--
   }
-  await fetchUserDataAndSchedules()
+  await fetchSchedulesFromSupabase()
 }
 
-const openDetails = (day) => { selectedDay.value = day }
-const closeDetails = () => { selectedDay.value = null }
+const openDetails = (dateKey) => {
+  selectedDay.value = calendarDays.value.find(d => d.dateKey === dateKey)
+}
 
-const monthOffset = computed(() => {
-  const firstDayObj = new Date(currentYear.value, currentMonth.value, 1)
-  let dayIndex = firstDayObj.getDay() - 1
-  if (dayIndex < 0) dayIndex = 6
-  return dayIndex
-})
+const closeDetails = () => {
+  selectedDay.value = null
+}
 
 const calendarDays = computed(() => {
   const year = currentYear.value
@@ -447,11 +542,16 @@ const calendarDays = computed(() => {
 
     let cardClass = "day-card"
     if (shift) {
-      if (shift.vacation) cardClass += " vacation"
+      if (shift.vacation) cardClass += " vacation-card"
+      else if (shift.sick) cardClass += " sick-card"
       else if (shift.isNight) cardClass += " night-shift-card"
       else cardClass += " day-shift-card"
     } else {
       cardClass += " off-day"
+    }
+
+    if (dateKey === todayDateKey.value) {
+      cardClass += " today-highlight"
     }
 
     days.push({ dayNum: day, dayName, dateKey, shift, cardClass, isWeekend })
@@ -460,12 +560,13 @@ const calendarDays = computed(() => {
 })
 
 const currentMonthHours = computed(() => {
-  return calendarDays.value.reduce((total, day) => total + (day.shift?.hours || 0), 0)
+  return calendarDays.value.reduce((total, day) => {
+    return total + (day.shift && !day.shift.vacation && !day.shift.sick ? (Number(day.shift.hours) || 0) : 0)
+  }, 0)
 })
 
-const handleLogout = async () => {
-  await supabase.auth.signOut()
-  localStorage.removeItem('user')
+const handleLogout = () => {
+  localStorage.removeItem('currentUser')
   router.push('/')
 }
 </script>
@@ -485,6 +586,204 @@ const handleLogout = async () => {
   overflow-x: hidden;
 }
 
+/* ==========================================
+   LIGHT THEME (Modern Enterprise Stil)
+   ========================================== */
+:global(body.light-theme) {
+  background: #F5F7FA !important;
+  color: #0F172A !important;
+}
+
+:global(body.light-theme) .app-main {
+  color: #0F172A !important;
+}
+
+/* Kalenderkarten im Light Mode */
+:global(body.light-theme) .day-card {
+  background: #FFFFFF !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Schicht-spezifische Kartenhintergründe & Borders im Light Mode */
+:global(body.light-theme) .day-card.day-shift-card {
+  background: #E0F2FE !important;
+  border-color: #2196F3 !important;
+}
+
+:global(body.light-theme) .day-card.night-shift-card {
+  background: #F3E8FF !important;
+  border-color: #8B5CF6 !important;
+}
+
+:global(body.light-theme) .day-card.vacation-card {
+  background: #FEF3C7 !important;
+  border-color: #F59E0B !important;
+}
+
+:global(body.light-theme) .day-card.sick-card {
+  background: #FEE2E2 !important;
+  border-color: #EF4444 !important;
+}
+
+:global(body.light-theme) .day-card.off-day {
+  background: #DCFCE7 !important;
+  border-color: #10B981 !important;
+}
+
+/* Texte & Lesbarkeit im Light Mode - Datum fix auf dunkel gesetzt */
+:global(body.light-theme) .day-number {
+  color: #0c0c0c !important;
+  font-weight: 700 !important;
+}
+
+:global(body.light-theme) .day-name {
+  color: #475569 !important;
+  font-weight: 600 !important;
+}
+
+:global(body.light-theme) .shift-ort-badge {
+  background: rgba(33, 150, 243, 0.15) !important;
+  color: #075985 !important;
+  border-color: #2196F3 !important;
+}
+
+:global(body.light-theme) .badge-td {
+  background: #E0F2FE !important;
+  color: #075985 !important;
+  border: 1px solid #2196F3 !important;
+}
+
+:global(body.light-theme) .badge-nd {
+  background: #F3E8FF !important;
+  color: #6B21A8 !important;
+  border: 1px solid #8B5CF6 !important;
+}
+
+:global(body.light-theme) .badge-vacation {
+  background: #FEF3C7 !important;
+  color: #92400E !important;
+  border: 1px solid #F59E0B !important;
+}
+
+:global(body.light-theme) .badge-sick {
+  background: #FEE2E2 !important;
+  color: #991B1B !important;
+  border: 1px solid #EF4444 !important;
+}
+
+:global(body.light-theme) .badge-off {
+  background: #DCFCE7 !important;
+  color: #166534 !important;
+  border: 1px solid #10B981 !important;
+}
+
+:global(body.light-theme) .time-day {
+  background: #E0F2FE !important;
+  color: #075985 !important;
+  border: 1px solid #2196F3 !important;
+}
+
+:global(body.light-theme) .time-night {
+  background: #F3E8FF !important;
+  color: #6B21A8 !important;
+  border: 1px solid #8B5CF6 !important;
+}
+
+/* Übersichtskarten im Light Mode */
+:global(body.light-theme) .hours-card {
+  background: #FFFFFF !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+}
+
+:global(body.light-theme) .hours-info span {
+  color: #64748B !important;
+}
+
+:global(body.light-theme) .hours-info strong {
+  color: #0F172A !important;
+}
+
+:global(body.light-theme) .view-switch {
+  background: #E2E8F0 !important;
+  border-color: #CBD5E1 !important;
+}
+
+:global(body.light-theme) .btn-switch {
+  color: #475569 !important;
+}
+
+:global(body.light-theme) .btn-switch.active {
+  background: #2196F3 !important;
+  color: #fff !important;
+}
+
+:global(body.light-theme) .month-title {
+  color: #0F172A !important;
+}
+
+:global(body.light-theme) .month-title span {
+  color: #475569 !important;
+}
+
+:global(body.light-theme) .modal-card {
+  background: #FFFFFF !important;
+  color: #0F172A !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1) !important;
+}
+
+:global(body.light-theme) .modal-header {
+  background: #F8FAFC !important;
+  border-bottom: 1px solid #E2E8F0 !important;
+}
+
+:global(body.light-theme) .modal-header h3 {
+  color: #0F172A !important;
+}
+
+:global(body.light-theme) .modal-subtitle {
+  color: #64748B !important;
+}
+
+:global(body.light-theme) .btn-close {
+  color: #475569 !important;
+}
+
+:global(body.light-theme) .detail-row {
+  border-bottom: 1px solid #F1F5F9 !important;
+}
+
+:global(body.light-theme) .detail-row .label {
+  color: #475569 !important;
+}
+
+:global(body.light-theme) .detail-row strong {
+  color: #0F172A !important;
+}
+
+:global(body.light-theme) .instruction-box {
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
+}
+
+:global(body.light-theme) .instruction-box h4 {
+  color: #0284C7 !important;
+}
+
+:global(body.light-theme) .instruction-box p {
+  color: #334155 !important;
+}
+
+:global(body.light-theme) .modal-footer {
+  background: #F8FAFC !important;
+  border-top: 1px solid #E2E8F0 !important;
+}
+
+/* ==========================================
+   ORIGINAL BASE STYLES (Dark / Standard)
+   ========================================== */
 .app-header {
   background: rgba(15, 23, 42, 0.95);
   backdrop-filter: blur(12px);
@@ -494,27 +793,60 @@ const handleLogout = async () => {
   top: 0;
   z-index: 1000;
   width: 100%;
+  margin: 0;
 }
 
 .header-inner {
   width: 100%;
-  padding: 12px 16px;
+  max-width: 100%;
+  padding: 12px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .user-info-link { text-decoration: none; }
 .user-info { display: flex; align-items: center; gap: 10px; }
 .avatar-icon {
-  width: 38px; height: 38px; background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  width: 38px; height: 38px; background: linear-gradient(135deg, #2196F3, #1d4ed8);
   border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; color: #fff; flex-shrink: 0;
 }
 .user-details { display: flex; flex-direction: column; text-align: left; }
 .user-name { font-size: 0.85rem; font-weight: 600; color: #f8fafc; white-space: nowrap; }
 .user-role { font-size: 0.7rem; color: #94a3b8; }
 
-.menu-toggle { display: none; background: none; border: none; font-size: 1.4rem; color: #f8fafc; cursor: pointer; padding: 6px; }
+.menu-toggle { display: none; background: none; border: none; font-size: 1.4rem; color: inherit; cursor: pointer; padding: 6px; }
+
+/* Glocke & Benachrichtigungs-Dropdown Styles (Exakt wie Original im Dark/Light Mode) */
+.notifications-wrapper { position: relative; }
+.btn-notification-bell { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: #f8fafc; width: 38px; height: 38px; border-radius: 10px; cursor: pointer; font-size: 1rem; position: relative; display: flex; align-items: center; justify-content: center; }
+.btn-notification-bell:hover { background: rgba(255, 255, 255, 0.1); }
+.btn-notification-bell.has-unread { border-color: #38bdf8; background: rgba(56, 189, 248, 0.1); }
+
+.badge-count { position: absolute; top: -5px; right: -5px; background: #EF4444; color: white; font-size: 0.65rem; font-weight: bold; padding: 2px 5px; border-radius: 50%; min-width: 16px; text-align: center; }
+
+.notifications-dropdown { position: absolute; right: 0; top: 48px; width: 300px; background: #131c2e; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1200; overflow: hidden; text-align: left; }
+.dropdown-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.1); background: #0b0f19; }
+.dropdown-header h4 { margin: 0; font-size: 0.85rem; color: #fff; }
+.btn-text-action { background: none; border: none; color: #38bdf8; font-size: 0.75rem; cursor: pointer; padding: 0; }
+.btn-text-action:hover { text-decoration: underline; }
+
+.dropdown-body { max-height: 280px; overflow-y: auto; }
+.no-notifications { padding: 20px; text-align: center; color: #94a3b8; font-size: 0.8rem; }
+
+.notification-item { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: background 0.2s; }
+.notification-item:hover { background: rgba(255,255,255,0.03); }
+.notification-item.unread { background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; }
+
+.notif-title { font-weight: bold; font-size: 0.82rem; color: #fff; margin-bottom: 2px; }
+.notif-msg { font-size: 0.78rem; color: #cbd5e1; margin-bottom: 3px; }
+.notif-time { font-size: 0.68rem; color: #64748b; }
 
 .nav-buttons {
   display: flex !important;
@@ -527,15 +859,52 @@ const handleLogout = async () => {
   border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; text-decoration: none;
   font-size: 0.85rem; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;
 }
-.btn-nav.active { background: #2563eb; border-color: #3b82f6; color: #fff; }
+.btn-nav.active { background: #2196F3; border-color: #3b82f6; color: #fff; }
 .btn-logout { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border-color: rgba(239, 68, 68, 0.2); cursor: pointer; }
 
 .app-main {
   width: 100%;
-  padding: 12px 16px;
+  max-width: 100%;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+}
+
+/* Handy-Menü */
+@media (max-width: 768px) {
+  .app-main { padding: 12px 12px; }
+  .header-inner { padding: 12px 16px; }
+  .menu-toggle { display: block; }
+
+  .nav-buttons {
+    display: none !important;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    background: rgba(15, 23, 42, 0.98);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    flex-direction: column;
+    padding: 20px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+    z-index: 1100;
+    gap: 8px;
+  }
+
+  .nav-buttons.show { display: flex !important; }
+
+  .nav-buttons .btn-nav {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 0.95rem;
+    justify-content: flex-start;
+    border-radius: 10px;
+  }
+
+  .desktop-only { display: none !important; }
 }
 
 .hours-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; }
@@ -543,23 +912,36 @@ const handleLogout = async () => {
   background: transparent; padding: 10px 12px; border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12); display: flex; align-items: center; gap: 8px; text-align: left;
 }
-.card-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.95rem; flex-shrink: 0; }
-.card-icon.blue { background: rgba(37, 99, 235, 0.2); color: #60a5fa; }
-.card-icon.green { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-.card-icon.orange { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-.hours-info span { display: block; font-size: 0.65rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; }
-.hours-info strong { font-size: 1.05rem; font-weight: 700; color: #f8fafc; }
+.card-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0; }
+.card-icon.blue { background: rgba(33, 150, 243, 0.2); color: #2196F3; }
+.card-icon.green { background: rgba(16, 185, 129, 0.2); color: #10B981; }
+.card-icon.orange { background: rgba(245, 158, 11, 0.2); color: #F59E0B; }
+.hours-info span { display: block; font-size: 0.62rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; }
+.hours-info strong { font-size: 1.05rem; font-weight: 700; color: inherit; }
 
 .calendar-controls {
   display: flex; justify-content: space-between; align-items: center;
   background: transparent; padding: 4px 0; border: none; gap: 10px; width: 100%;
 }
-.month-nav { display: flex; align-items: center; gap: 8px; }
-.month-title { font-size: 1rem; font-weight: 700; }
+.month-nav { display: flex; align-items: center; gap: 10px; }
+.month-title { font-size: 1.05rem; font-weight: 700; }
+.nav-arrow { color: #2196F3; font-size: 1.2rem; cursor: pointer; padding: 4px; }
 
 .view-switch { display: flex; gap: 4px; background: rgba(255, 255, 255, 0.05); padding: 4px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08); align-items: center; }
-.btn-switch { padding: 6px 10px; font-size: 0.78rem; border: none; background: transparent; color: #94a3b8; border-radius: 6px; font-weight: 600; cursor: pointer; }
-.btn-switch.active { background: #2563eb; color: #fff; }
+.btn-switch { padding: 6px 10px; font-size: 0.78rem; border: none; background: transparent; color: #94a3b8; border-radius: 6px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-switch.active { background: #2196F3; color: #fff; }
+
+.calendar-container-narrow {
+  width: 100%;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+
+.calendar-container-list-narrow {
+  width: 100%;
+  max-width: 750px;
+  margin: 0 auto;
+}
 
 .calendar-grid {
   display: grid;
@@ -568,9 +950,15 @@ const handleLogout = async () => {
   width: 100%;
 }
 
+@media (max-width: 768px) {
+  .calendar-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
 .day-card {
   background: #131c2e;
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 10px;
   min-height: 110px;
   display: flex;
@@ -579,63 +967,62 @@ const handleLogout = async () => {
   border: 1px solid rgba(255, 255, 255, 0.15);
   cursor: pointer;
   text-align: left;
-  transition: transform 0.15s ease;
 }
 
 .day-card:active { transform: scale(0.98); }
-.day-card.offset-day { background: transparent; border: none; cursor: default; pointer-events: none; }
 
-.day-card.day-shift-card { border-color: rgba(56, 189, 248, 0.6); background: #0c273d; }
-.day-card.night-shift-card { border-color: rgba(168, 85, 247, 0.6); background: #24133b; }
-.day-card.vacation { border-color: rgba(16, 185, 129, 0.6); background: #0c3322; }
+.day-card.day-shift-card { border-color: rgba(33, 150, 243, 0.6); background: rgba(33, 150, 243, 0.08); }
+.day-card.night-shift-card { border-color: rgba(139, 92, 246, 0.6); background: rgba(139, 92, 246, 0.08); }
+.day-card.vacation-card { border-color: rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.08); }
+.day-card.sick-card { border-color: rgba(239, 68, 68, 0.6); background: rgba(239, 68, 68, 0.08); }
 
 .day-card.off-day {
-  background: #3b181b;
-  border: 1px solid rgba(239, 68, 68, 0.6);
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.6);
 }
 
-.day-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #94a3b8; margin-bottom: 6px; }
-.day-number { font-weight: 700; color: #f8fafc; font-size: 0.95rem; }
-.day-name { font-size: 0.72rem; text-transform: uppercase; font-weight: 600; }
+.day-card.today-highlight {
+  box-shadow: 0 0 0 2.5px #F59E0B !important;
+}
+
+.day-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px; }
+.day-number { font-weight: 700; color: #a8acb1; font-size: 0.95rem; }
+.day-name { font-size: 0.7rem; text-transform: uppercase; font-weight: 600; }
 
 .day-body { display: flex; flex-direction: column; gap: 5px; }
 .shift-top-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 
-.shift-badge { padding: 4px 6px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
-.badge-drt { background: rgba(34, 197, 94, 0.35); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.6); }
-.badge-kh { background: rgba(56, 189, 248, 0.35); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.6); }
-.badge-kps { background: rgba(168, 85, 247, 0.35); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.6); }
-.badge-vacation { background: rgba(16, 185, 129, 0.35); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.6); width: 100%; text-align: center; padding: 5px; }
+.shift-badge { padding: 3px 6px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+.shift-ort-badge { padding: 3px 6px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; background: rgba(33, 150, 243, 0.25); color: #2196F3; border: 1px solid rgba(33, 150, 243, 0.5); }
+
+.badge-td { background: rgba(33, 150, 243, 0.35); color: #2196F3; border: 1px solid rgba(33, 150, 243, 0.6); }
+.badge-nd { background: rgba(139, 92, 246, 0.35); color: #8B5CF6; border: 1px solid rgba(139, 92, 246, 0.6); }
+.badge-vacation { background: rgba(245, 158, 11, 0.35); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.6); width: 100%; text-align: center; padding: 5px; }
+.badge-sick { background: rgba(239, 68, 68, 0.35); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.6); width: 100%; text-align: center; padding: 5px; }
 
 .badge-off {
-  background: rgba(239, 68, 68, 0.35);
-  color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.6);
+  background: rgba(16, 185, 129, 0.35);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.6);
   font-weight: 700;
   width: 100%;
   text-align: center;
   padding: 5px;
 }
 
-.shift-time-badge { font-size: 0.65rem; padding: 3px 6px; border-radius: 4px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; }
-.time-day { background: rgba(56, 189, 248, 0.25); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.5); }
-.time-night { background: rgba(168, 85, 247, 0.25); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.5); }
-.shift-title { font-size: 0.75rem; color: #cbd5e1; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.shift-location { font-size: 0.7rem; color: #60a5fa; font-weight: 600; margin-top: 2px; }
+.shift-time-badge { font-size: 0.68rem; padding: 2px 5px; border-radius: 4px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; }
+.time-day { background: rgba(33, 150, 243, 0.25); color: #2196F3; border: 1px solid rgba(33, 150, 243, 0.5); }
+.time-night { background: rgba(139, 92, 246, 0.25); color: #8B5CF6; border: 1px solid rgba(139, 92, 246, 0.5); }
 
-.calendar-grid.list-view { grid-template-columns: 1fr !important; gap: 8px; }
-.list-view .day-card { min-height: 56px; flex-direction: row; align-items: center; justify-content: space-between; padding: 10px 14px; }
-.list-view .day-header { gap: 12px; margin-bottom: 0; width: 25%; justify-content: flex-start; }
-.list-view .day-body { flex-direction: row; align-items: center; gap: 15px; width: 75%; justify-content: flex-end; }
+.calendar-grid.list-view { grid-template-columns: 1fr !important; gap: 6px; }
+.list-view .day-card { min-height: 50px; flex-direction: row; align-items: center; justify-content: space-between; padding: 8px 14px; }
+.list-view .day-header { gap: 10px; margin-bottom: 0; width: 25%; justify-content: flex-start; }
+.list-view .day-body { flex-direction: row; align-items: center; gap: 12px; width: 75%; justify-content: flex-end; }
 .list-view .shift-top-row { align-items: center; }
-.list-view .shift-details { text-align: right; display: flex; align-items: center; gap: 10px; }
-
-.list-view .day-card.off-day .day-body { justify-content: center; }
-.list-view .day-card.off-day .badge-off { width: auto; min-width: 120px; margin: 0 auto; }
 
 .landscape-fullscreen-container {
   width: 100%;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 .landscape-table {
   border-collapse: collapse;
@@ -645,7 +1032,7 @@ const handleLogout = async () => {
 }
 .landscape-table th, .landscape-table td {
   width: calc(100% / 31);
-  padding: 8px 1px;
+  padding: 4px 1px;
 }
 .landscape-table th {
   font-size: 0.7rem;
@@ -654,44 +1041,39 @@ const handleLogout = async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row-dates th { background: #2563eb; color: #ffffff; font-weight: 700; font-size: 0.75rem; }
+.row-dates th { background: #2196F3; color: #ffffff; font-weight: 700; font-size: 0.75rem; padding: 6px 1px; }
 .row-dates th.weekend { background: #1d4ed8; }
-.row-weekdays th { background: #1e293b; color: #94a3b8; font-weight: 600; font-size: 0.65rem; }
+.row-weekdays th { background: #1e293b; color: #94a3b8; font-weight: 600; font-size: 0.65rem; padding: 4px 1px; }
 
 .row-shifts td {
-  height: 70px;
+  height: 42px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   vertical-align: middle;
   cursor: pointer;
   overflow: hidden;
-  padding: 4px 1px;
+  padding: 2px 1px;
 }
-.row-shifts td.cell-day { background: #0c273d; }
-.row-shifts td.cell-night { background: #24133b; }
-.row-shifts td.cell-vacation { background: #0c3322; }
-.row-shifts td.is-off { background: #3b181b; }
+.row-shifts td.cell-day { background: rgba(33, 150, 243, 0.15); }
+.row-shifts td.cell-night { background: rgba(139, 92, 246, 0.15); }
+.row-shifts td.cell-vacation { background: rgba(245, 158, 11, 0.15); }
+.row-shifts td.cell-sick { background: rgba(239, 68, 68, 0.15); }
+.row-shifts td.is-off { background: rgba(16, 185, 129, 0.15); }
+.row-shifts td.cell-today-highlight { outline: 2px solid #F59E0B; outline-offset: -2px; }
 
 .landscape-badge {
   display: block;
-  margin: 0 auto 2px auto;
-  font-size: 0.55rem;
-  padding: 2px 2px;
-  width: 95%;
+  margin: 0 auto;
+  font-size: 0.62rem;
+  padding: 3px 2px;
+  width: 92%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.landscape-time {
-  display: block;
-  font-size: 0.52rem;
-  color: #94a3b8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 700;
 }
 .off-text-landscape {
-  font-size: 0.68rem;
-  color: #fca5a5;
+  font-size: 0.7rem;
+  color: #10B981;
   font-weight: 700;
 }
 
@@ -701,267 +1083,140 @@ const handleLogout = async () => {
   display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px;
 }
 .modal-card {
-  background: #161e2e; border-radius: 16px; width: 100%; max-width: 420px;
-  border: 1px solid rgba(255, 255, 255, 0.15); overflow: hidden; text-align: left;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-}
-.modal-header { padding: 16px; background: #0b0f19; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
-.modal-header h3 { font-size: 1rem; margin: 0; color: #fff; }
-.modal-subtitle { font-size: 0.78rem; color: #94a3b8; }
-.btn-close { background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer; padding: 4px; }
-.modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-.detail-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; padding-bottom: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-.detail-row .label { color: #94a3b8; }
-.instruction-box { background: #0b0f19; padding: 14px; border-radius: 10px; border-left: 3px solid #3b82f6; margin-top: 4px; }
-.instruction-box h4 { font-size: 0.85rem; color: #60a5fa; margin: 0 0 6px 0; }
-.instruction-box p { font-size: 0.85rem; color: #cbd5e1; margin: 0; line-height: 1.4; }
-.status-info { padding: 14px; border-radius: 10px; font-size: 0.88rem; display: flex; gap: 10px; align-items: center; }
-.status-info.green { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-.status-info.gray { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
-.modal-footer { padding: 14px 18px; background: #0b0f19; text-align: right; border-top: 1px solid rgba(255, 255, 255, 0.08); }
-.btn-primary { padding: 10px 20px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
-
-:global(body.light-theme) {
-  background: #f4f6f9 !important;
-  color: #111111 !important;
+  background: #161e2e; border-radius: 16px; width: 100%; max-width: 400px;
+  border: 1px solid rgba(255, 255, 255, 0.15); overflow: hidden;
 }
 
-:global(body.light-theme) .app-header {
-  background: #ffffff !important;
-  border-bottom: 1px solid #cbd5e1 !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-:global(body.light-theme) .user-name,
-:global(body.light-theme) .month-title,
-:global(body.light-theme) .day-number,
-:global(body.light-theme) h3,
-:global(body.light-theme) .hours-info strong,
-:global(body.light-theme) .hours-info span {
-  color: #000000 !important;
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #f8fafc;
 }
 
-:global(body.light-theme) .user-role,
-:global(body.light-theme) .day-header {
-  color: #000000 !important;
-  font-weight: 700;
+.modal-subtitle {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-transform: uppercase;
 }
 
-:global(body.light-theme) .menu-toggle {
-  color: #000000 !important;
+.btn-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px;
 }
 
-:global(body.light-theme) .nav-buttons {
-  background: #ffffff;
-  border-bottom: 1px solid #cbd5e1;
+.btn-close:hover {
+  color: #fff;
 }
 
-:global(body.light-theme) .btn-nav {
-  background: #f1f5f9;
-  color: #000000;
-  border: 1px solid #cbd5e1;
-  font-weight: 700;
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+  text-align: left;
 }
 
-:global(body.light-theme) .btn-nav.active {
-  background: #0284c7;
-  color: #ffffff;
-  border-color: #0284c7;
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 8px;
 }
 
-:global(body.light-theme) .btn-logout {
-  background: #fee2e2;
-  color: #991b1b;
-  border-color: #fca5a5;
+.detail-row .label {
+  color: #94a3b8;
+  font-weight: 500;
 }
 
-:global(body.light-theme) .hours-card {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+.instruction-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 6px;
 }
 
-:global(body.light-theme) .view-switch {
-  background: #e2e8f0;
-  border: 1px solid #cbd5e1;
+.instruction-box h4 {
+  margin: 0 0 6px 0;
+  font-size: 0.85rem;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-:global(body.light-theme) .btn-switch {
-  color: #334155;
+.instruction-box p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  line-height: 1.4;
 }
 
-:global(body.light-theme) .btn-switch.active {
-  background: #0284c7;
-  color: #ffffff;
+.status-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
 }
 
-:global(body.light-theme) .day-card {
-  background: #ffffff;
-  border: 2px solid #64748b;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+.status-info.green {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
-:global(body.light-theme) .day-card.day-shift-card {
-  background: #bae6fd;
-  border-color: #0284c7;
+.status-info.orange {
+  background: rgba(245, 158, 11, 0.12);
+  color: #F59E0B;
+  border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
-:global(body.light-theme) .day-card.night-shift-card {
-  background: #d8b4fe;
-  border-color: #7e22ce;
+.status-info.red {
+  background: rgba(239, 68, 68, 0.12);
+  color: #EF4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-:global(body.light-theme) .day-card.vacation {
-  background: #bbf7d0;
-  border-color: #15803d;
+.modal-footer {
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: flex-end;
 }
 
-:global(body.light-theme) .day-card.off-day {
-  background: #fecaca;
-  border-color: #b91c1c;
-}
-
-:global(body.light-theme) .shift-title {
-  color: #000000 !important;
-  font-weight: 700;
-}
-
-:global(body.light-theme) .time-day {
-  background: #7dd3fc;
-  color: #0c4a6e;
-  border: 1px solid #0284c7;
-  font-weight: 700;
-}
-
-:global(body.light-theme) .time-night {
-  background: #c084fc;
-  color: #3b0764;
-  border: 1px solid #7e22ce;
-  font-weight: 700;
-}
-
-:global(body.light-theme) .badge-off {
-  background: #f87171;
-  color: #450a0a;
-  border: 1px solid #b91c1c;
-  font-weight: 800;
-}
-
-:global(body.light-theme) .badge-vacation {
-  background: #4ade80;
-  color: #052e16;
-  border: 1px solid #15803d;
-  font-weight: 800;
-}
-
-:global(body.light-theme) .badge-drt {
-  background: #4ade80;
-  color: #052e16;
-  border: 1px solid #15803d;
-  font-weight: 800;
-}
-
-:global(body.light-theme) .badge-kh {
-  background: #38bdf8;
-  color: #082f49;
-  border: 1px solid #0284c7;
-  font-weight: 800;
-}
-
-:global(body.light-theme) .badge-kps {
-  background: #c084fc;
-  color: #3b0764;
-  border: 1px solid #7e22ce;
-  font-weight: 800;
-}
-
-:global(body.light-theme) .landscape-table th,
-:global(body.light-theme) .landscape-table td {
-  border-color: #64748b;
-}
-
-:global(body.light-theme) .row-dates th {
-  background: #0284c7;
-  color: #ffffff;
-}
-
-:global(body.light-theme) .row-dates th.weekend {
-  background: #0369a1;
-}
-
-:global(body.light-theme) .row-weekdays th {
-  background: #cbd5e1;
-  color: #000000;
-  font-weight: 700;
-}
-
-:global(body.light-theme) .row-shifts td.cell-day { background: #bae6fd; }
-:global(body.light-theme) .row-shifts td.cell-night { background: #d8b4fe; }
-:global(body.light-theme) .row-shifts td.cell-vacation { background: #bbf7d0; }
-:global(body.light-theme) .row-shifts td.is-off { background: #fecaca; }
-:global(body.light-theme) .off-text-landscape { color: #991b1b; font-weight: 800; }
-
-:global(body.light-theme) .modal-card {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
-}
-
-:global(body.light-theme) .modal-header,
-:global(body.light-theme) .modal-footer {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-}
-
-:global(body.light-theme) .detail-row {
-  border-bottom: 1px solid #e2e8f0;
-}
-
-:global(body.light-theme) .detail-row .label {
-  color: #000000;
+.btn-primary {
+  background: #2196F3;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
   font-weight: 600;
+  cursor: pointer;
+  font-size: 0.85rem;
 }
 
-:global(body.light-theme) .instruction-box {
-  background: #f1f5f9;
-  border-left-color: #0284c7;
-}
-
-:global(body.light-theme) .instruction-box h4 {
-  color: #0284c7;
-}
-
-:global(body.light-theme) .instruction-box p {
-  color: #000000;
-}
-
-@media (max-width: 768px) {
-  .desktop-only { display: none !important; }
-  .menu-toggle { display: block; }
-  .nav-buttons {
-    display: none !important;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    width: 100%;
-    background: rgba(15, 23, 42, 0.98);
-    backdrop-filter: blur(12px);
-    flex-direction: column;
-    padding: 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    gap: 8px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-  }
-  .nav-buttons.show { display: flex !important; }
-  .btn-nav { width: 100%; justify-content: flex-start; padding: 12px 14px; }
-  .hours-overview { grid-template-columns: 1fr; gap: 8px; }
-  .calendar-grid { grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .day-card { min-height: 80px; padding: 6px; }
-  .shift-title { display: none; }
-  .calendar-grid.list-view { grid-template-columns: 1fr !important; }
-  .list-view .day-card { min-height: 50px; padding: 8px 10px; }
-  .list-view .day-header { width: 30%; }
-  .list-view .day-body { width: 70%; }
-  .list-view .shift-title { display: block; font-size: 0.7rem; }
+.btn-primary:hover {
+  background: #1d4ed8;
 }
 </style>

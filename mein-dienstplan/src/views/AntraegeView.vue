@@ -3,13 +3,13 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-inner">
-        <!-- Profil-Link -->
+        <!-- Dynamischer Profil-Link mit echtem Namen -->
         <router-link to="/profile" class="user-info user-info-link">
           <div class="avatar-icon">
             <i class="fa-solid fa-user-gear"></i>
           </div>
           <div class="user-details">
-            <span class="user-name">AL LAMI Jaafar Mustafa Rashid</span>
+            <span class="user-name">{{ currentUserName }}</span>
             <span class="user-role">Mitarbeiter Portal</span>
           </div>
         </router-link>
@@ -28,7 +28,7 @@
           <router-link to="/anweisungen" class="btn-nav" @click="isMobileMenuOpen = false">
             <i class="fa-solid fa-file-pdf"></i> Anweisungen
           </router-link>
-          <router-link to="/gehalt" class="btn-nav" @click="closeMobileMenu">
+          <router-link to="/gehalt" class="btn-nav" @click="isMobileMenuOpen = false">
             <i class="fa-solid fa-file-invoice-dollar"></i> Gehalt
           </router-link>
           <router-link to="/kontakt" class="btn-nav" @click="isMobileMenuOpen = false">
@@ -109,10 +109,24 @@
         </div>
 
         <div class="requests-list">
+          <div v-if="requests.length === 0" class="no-requests">
+            Keine Anträge vorhanden.
+          </div>
           <div v-for="req in requests" :key="req.id" class="request-item">
             <div class="request-header">
               <span class="request-type">{{ req.type }}</span>
-              <span class="status-badge" :class="getStatusClass(req.status)">{{ req.status }}</span>
+              <div class="request-actions">
+                <span class="status-badge" :class="getStatusClass(req.status)">{{ req.status }}</span>
+
+                <!-- Löschen-Button nur anzeigen, wenn der Antrag noch in Bearbeitung ist -->
+                <button
+                    v-if="req.rawStatus === 'pending' || req.status === 'In Bearbeitung'"
+                    class="btn-delete"
+                    @click="deleteRequest(req.id)"
+                    title="Antrag löschen">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
             </div>
             <div class="request-dates">
               <i class="fa-regular fa-calendar"></i> {{ req.startDate }} {{ req.endDate !== req.startDate ? 'bis ' + req.endDate : '' }}
@@ -126,39 +140,132 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { supabase } from '../config/supabase.js'
 
 const router = useRouter()
 const isMobileMenuOpen = ref(false)
 const successMessage = ref('')
 
+const currentUserName = ref('Mitarbeiter')
+const currentUserId = ref(null)
+
 const newRequest = ref({ type: '', startDate: '', endDate: '', reason: '' })
+const requests = ref([])
 
-const requests = ref([
-  { id: 1, type: 'Erholungsurlaub', startDate: '15.08.2026', endDate: '15.08.2026', reason: 'Sommerurlaub Tagestrip', status: 'Genehmigt' },
-  { id: 2, type: 'Zeitausgleich', startDate: '22.08.2026', endDate: '23.08.2026', reason: 'Überstundenabbau', status: 'In Bearbeitung' }
-])
-
-const submitRequest = () => {
-  const formatDate = (dateStr) => {
-    if (!dateStr) return ''
-    const d = new Date(dateStr)
-    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
+onMounted(async () => {
+  // Benutzerdaten aus dem LocalStorage auslesen
+  const userJson = localStorage.getItem('currentUser')
+  if (userJson) {
+    try {
+      const user = JSON.parse(userJson)
+      currentUserName.value = user.name || 'Mitarbeiter'
+      currentUserId.value = user.id || null
+    } catch (e) {
+      console.error('Fehler beim Parsen von currentUser:', e)
+    }
   }
 
-  requests.value.unshift({
-    id: Date.now(),
-    type: newRequest.value.type,
-    startDate: formatDate(newRequest.value.startDate),
-    endDate: formatDate(newRequest.value.endDate),
-    reason: newRequest.value.reason,
-    status: 'In Bearbeitung'
-  })
+  await fetchRequests()
+})
 
-  successMessage.value = 'Ihr Antrag wurde übermittelt!'
-  newRequest.value = { type: '', startDate: '', endDate: '', reason: '' }
-  setTimeout(() => { successMessage.value = '' }, 4000)
+const fetchRequests = async () => {
+  try {
+    // Falls du nur die Anträge des aktuell eingeloggten Users laden willst,
+    // kannst du .eq('user_id', currentUserId.value) hinzufügen:
+    let query = supabase.from('vacations').select('*').order('id', { ascending: false })
+
+    if (currentUserId.value) {
+      query = query.eq('user_id', currentUserId.value)
+    }
+
+    const { data, error } = await query
+
+    if (error) throw error
+
+    if (data) {
+      requests.value = data.map(req => ({
+        id: req.id,
+        type: req.type || 'Erholungsurlaub',
+        startDate: formatDateForDisplay(req.start_date),
+        endDate: formatDateForDisplay(req.end_date),
+        rawStart: req.start_date,
+        rawEnd: req.end_date,
+        reason: req.reason,
+        rawStatus: req.status,
+        status: translateStatus(req.status)
+      }))
+    }
+  } catch (err) {
+    console.error('Fehler beim Laden der Anträge:', err.message)
+  }
+}
+
+const translateStatus = (dbStatus) => {
+  if (dbStatus === 'approved') return 'Genehmigt'
+  if (dbStatus === 'rejected') return 'Abgelehnt'
+  return 'In Bearbeitung'
+}
+
+const formatDateForDisplay = (dateStr) => {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) return dateStr
+  return `${parts[2]}.${parts[1]}.${parts[0]}`
+}
+
+const submitRequest = async () => {
+  if (!newRequest.value.type || !newRequest.value.startDate || !newRequest.value.endDate) {
+    alert('Bitte alle Pflichtfelder ausfüllen!')
+    return
+  }
+
+  try {
+    const { error } = await supabase
+        .from('vacations')
+        .insert([
+          {
+            user_id: currentUserId.value, // Die echte ID des Users mitschicken
+            type: newRequest.value.type,
+            start_date: newRequest.value.startDate,
+            end_date: newRequest.value.endDate,
+            reason: newRequest.value.reason || '',
+            status: 'pending'
+          }
+        ])
+        .select()
+
+    if (error) throw error
+
+    successMessage.value = 'Ihr Antrag wurde erfolgreich direkt an den Admin übermittelt!'
+    newRequest.value = { type: '', startDate: '', endDate: '', reason: '' }
+
+    await fetchRequests()
+
+    setTimeout(() => { successMessage.value = '' }, 4000)
+  } catch (err) {
+    console.error('Fehler beim Speichern:', err.message)
+    alert('Fehler beim Absenden des Antrags: ' + err.message)
+  }
+}
+
+const deleteRequest = async (id) => {
+  if (!confirm('Möchtest du diesen Antrag wirklich zurückziehen/löschen?')) return
+
+  try {
+    const { error } = await supabase
+        .from('vacations')
+        .delete()
+        .eq('id', id)
+
+    if (error) throw error
+
+    requests.value = requests.value.filter(req => req.id !== id)
+  } catch (err) {
+    console.error('Fehler beim Löschen:', err.message)
+    alert('Fehler beim Löschen des Antrags.')
+  }
 }
 
 const getStatusClass = (status) => {
@@ -168,8 +275,8 @@ const getStatusClass = (status) => {
 }
 
 const handleLogout = () => {
-  localStorage.removeItem('user')
-  router.push('/')
+  localStorage.removeItem('currentUser')
+  router.push('/login')
 }
 </script>
 
@@ -179,7 +286,6 @@ const handleLogout = () => {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Zentrierter Seiten-Container ohne Seitenabstände/Ränder */
 .page-container {
   min-height: 100vh;
   min-height: 100dvh;
@@ -192,7 +298,6 @@ const handleLogout = () => {
   overflow-x: hidden;
 }
 
-/* Full-Width Header mit fester Höhe & Zentrierung */
 .app-header {
   background: rgba(15, 23, 42, 0.95);
   backdrop-filter: blur(12px);
@@ -262,7 +367,6 @@ const handleLogout = () => {
 .btn-nav.active { background: #2563eb; border-color: #3b82f6; color: #fff; }
 .btn-logout { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border-color: rgba(239, 68, 68, 0.2); cursor: pointer; }
 
-/* Zentrierter Hauptbereich für PC & Mobile */
 .app-main {
   flex: 1;
   padding: 20px 16px;
@@ -339,7 +443,6 @@ const handleLogout = () => {
   margin-bottom: 6px;
 }
 
-/* Formular-Eingaben mit 16px Font-Size (verhindert iOS Safari Zoom) */
 .form-group input,
 .form-group select,
 .form-group textarea {
@@ -412,7 +515,6 @@ const handleLogout = () => {
   gap: 10px;
 }
 
-/* Antragsliste */
 .requests-list {
   display: flex;
   flex-direction: column;
@@ -433,6 +535,12 @@ const handleLogout = () => {
   margin-bottom: 6px;
 }
 
+.request-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .request-type { font-weight: 600; font-size: 0.88rem; color: #f8fafc; }
 
 .status-badge {
@@ -447,10 +555,23 @@ const handleLogout = () => {
 .status-pending { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
 .status-rejected { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
 
+.btn-delete {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px;
+  transition: color 0.2s;
+}
+.btn-delete:hover {
+  color: #f87171;
+}
+
 .request-dates { font-size: 0.78rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
 .request-reason { font-size: 0.78rem; color: #cbd5e1; margin-top: 6px; font-style: italic; }
+.no-requests { font-size: 0.85rem; color: #64748b; text-align: center; padding: 10px; }
 
-/* Mobile Anpassungen */
 @media (max-width: 768px) {
   .menu-toggle { display: block; }
 

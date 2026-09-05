@@ -8,7 +8,7 @@
             <i class="fa-solid fa-user-gear"></i>
           </div>
           <div class="user-details">
-            <span class="user-name">AL LAMI Jaafar Mustafa Rashid</span>
+            <span class="user-name">{{ userName }}</span>
             <span class="user-role">Mitarbeiter Portal</span>
           </div>
         </router-link>
@@ -27,7 +27,7 @@
           <router-link to="/anweisungen" class="btn-nav active" @click="isMobileMenuOpen = false">
             <i class="fa-solid fa-file-pdf"></i> Anweisungen
           </router-link>
-          <router-link to="/gehalt" class="btn-nav" @click="closeMobileMenu">
+          <router-link to="/gehalt" class="btn-nav" @click="isMobileMenuOpen = false">
             <i class="fa-solid fa-file-invoice-dollar"></i> Gehalt
           </router-link>
           <router-link to="/kontakt" class="btn-nav" @click="isMobileMenuOpen = false">
@@ -51,23 +51,38 @@
           </div>
           <div>
             <h2>Dienstanweisungen & Dokumente</h2>
-            <p class="card-subtitle">Offizielle Richtlinien und PDFs zum Download</p>
+            <p class="card-subtitle">Offizielle Richtlinien und PDFs vom Büro</p>
           </div>
         </div>
 
         <div class="pdf-list">
-          <div v-for="pdf in pdfDocuments" :key="pdf.id" class="pdf-item">
+          <!-- Lade-Animation -->
+          <div v-if="loading" class="text-center" style="padding: 20px; color: #94a3b8;">
+            Lade Dokumente...
+          </div>
+
+          <!-- Wenn Dokumente vorhanden sind -->
+          <div v-for="doc in pdfDocuments" :key="doc.id" class="pdf-item">
             <div class="pdf-info">
               <i class="fa-regular fa-file-pdf pdf-icon"></i>
               <div class="pdf-text-details">
-                <strong>{{ pdf.title }}</strong>
-                <span class="pdf-meta">Datum: {{ pdf.date }} | Größe: {{ pdf.size }}</span>
+                <strong>{{ doc.title }}</strong>
+                <p class="pdf-content-text" v-if="doc.content">{{ doc.content }}</p>
+                <span class="pdf-meta">Von: {{ doc.sender || 'Admin' }} | Datum: {{ formatDate(doc.created_at) }}</span>
               </div>
             </div>
-            <a :href="pdf.link" target="_blank" class="btn-download">
+
+            <!-- Download / Öffnen Button (Nur wenn eine Datei angehängt wurde) -->
+            <a v-if="doc.file_url" :href="doc.file_url" target="_blank" class="btn-download">
               <i class="fa-solid fa-download"></i>
-              <span>Öffnen / PDF</span>
+              <span>PDF Öffnen</span>
             </a>
+            <span v-else class="no-file-badge">Nur Nachricht</span>
+          </div>
+
+          <!-- Fallback falls keine Nachrichten/Dokumente da sind -->
+          <div v-if="!loading && pdfDocuments.length === 0" class="text-center" style="padding: 20px; color: #64748b;">
+            Keine Dienstanweisungen vorhanden.
           </div>
         </div>
       </section>
@@ -76,22 +91,55 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { supabase } from '@/config/supabase.js'
 
 const router = useRouter()
 const isMobileMenuOpen = ref(false)
+const pdfDocuments = ref([])
+const loading = ref(true)
+const userName = ref('Mitarbeiter')
 
-const pdfDocuments = ref([
-  { id: 1, title: 'Allgemeine Dienstanweisung KH Hietzing', date: '01.01.2026', size: '1.2 MB', link: '#' },
-  { id: 2, title: 'Sicherheits- & Hygienevorschriften 2026', date: '15.02.2026', size: '850 KB', link: '#' },
-  { id: 3, title: 'Leitfaden für Nachtdienste & Übergaben', date: '10.05.2026', size: '2.1 MB', link: '#' },
-  { id: 4, title: 'Notfallplan & Brandschutzordnung', date: '01.07.2026', size: '1.5 MB', link: '#' }
-])
+onMounted(async () => {
+  // Benutzername aus dem LocalStorage auslesen
+  const userJson = localStorage.getItem('currentUser')
+  if (userJson) {
+    try {
+      const user = JSON.parse(userJson)
+      if (user && user.name) {
+        userName.value = user.name
+      }
+    } catch (e) {
+      console.error('Fehler beim Parsen des Benutzers', e)
+    }
+  }
+
+  await fetchAnnouncements()
+})
+
+const fetchAnnouncements = async () => {
+  loading.value = true
+  const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+  if (!error && data) {
+    pdfDocuments.value = data
+  }
+  loading.value = false
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return '-'
+  const d = new Date(dateString)
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
 
 const handleLogout = () => {
-  localStorage.removeItem('user')
-  router.push('/')
+  localStorage.removeItem('currentUser')
+  router.push('/login')
 }
 </script>
 
@@ -242,11 +290,12 @@ const handleLogout = () => {
   background: #0d1322;
 }
 
-.pdf-info { display: flex; align-items: center; gap: 14px; }
+.pdf-info { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
 .pdf-icon { font-size: 1.8rem; color: #ef4444; flex-shrink: 0; }
-.pdf-text-details { display: flex; flex-direction: column; text-align: left; }
+.pdf-text-details { display: flex; flex-direction: column; text-align: left; width: 100%; min-width: 0; }
 .pdf-info strong { font-size: 0.92rem; color: #f8fafc; font-weight: 600; line-height: 1.3; }
-.pdf-meta { font-size: 0.78rem; color: #94a3b8; margin-top: 2px; }
+.pdf-content-text { font-size: 0.82rem; color: #cbd5e1; margin: 4px 0 2px 0; white-space: pre-line; word-break: break-word; }
+.pdf-meta { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
 
 .btn-download {
   background: rgba(37, 99, 235, 0.15);
@@ -266,6 +315,8 @@ const handleLogout = () => {
 }
 
 .btn-download:hover { background: #2563eb; color: #fff; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
+
+.no-file-badge { font-size: 0.75rem; color: #64748b; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
 
 /* Mobile Anpassungen */
 @media (max-width: 768px) {
@@ -297,6 +348,6 @@ const handleLogout = () => {
   .card { padding: 18px 16px; border-radius: 14px; }
 
   .pdf-item { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .btn-download { width: 100%; justify-content: center; padding: 11px; }
+  .btn-download, .no-file-badge { width: 100%; justify-content: center; text-align: center; }
 }
 </style>
