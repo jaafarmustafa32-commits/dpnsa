@@ -1,45 +1,92 @@
-// public/sw.js
-self.addEventListener('push', function (event) {
-    if (!(self.registration && self.registration.showNotification)) {
-        return;
+/* public/sw.js */
+
+self.addEventListener('install', (event) => {
+    console.log('✅ Service Worker installiert')
+    self.skipWaiting()
+})
+
+self.addEventListener('activate', (event) => {
+    console.log('✅ Service Worker aktiviert')
+
+    event.waitUntil(
+        self.clients.claim()
+    )
+})
+
+self.addEventListener('push', (event) => {
+    console.log('📩 Push-Nachricht empfangen')
+
+    let data = {
+        title: '📅 Neue Benachrichtigung',
+        body: 'Du hast eine neue Nachricht.',
+        url: '/'
     }
 
-    let data = { title: 'Neue Benachrichtigung', body: 'Du hast eine neue Nachricht.', url: '/home' };
-
+    // Push-Daten lesen
     if (event.data) {
         try {
-            data = event.data.json();
-        } catch (e) {
-            data.body = event.data.text();
+            data = {
+                ...data,
+                ...event.data.json()
+            }
+        } catch (error) {
+            try {
+                data.body = event.data.text()
+            } catch {
+                console.error('Push-Daten konnten nicht gelesen werden:', error)
+            }
         }
     }
 
-    const options = {
+    const notificationOptions = {
         body: data.body,
-        icon: '/favicon.ico', // Passe das an dein Icon an
+        icon: '/favicon.ico',
         badge: '/favicon.ico',
-        data: { url: data.url || '/home' }
-    };
+        tag: data.tag || 'dienstplan-notification',
+        renotify: true,
+        requireInteraction: false,
+        data: {
+            url: data.url || '/'
+        }
+    }
 
     event.waitUntil(
-        self.registration.showNotification(data.title, options)
-    );
-});
+        self.registration.showNotification(
+            data.title || '📅 Dienstplan',
+            notificationOptions
+        )
+    )
+})
 
-// Klick auf die Benachrichtigung öffnet die App
-self.addEventListener('notificationclick', function (event) {
-    event.notification.close();
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close()
+
+    const url = event.notification?.data?.url || '/'
+
     event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-            for (let i = 0; i < windowClients.length; i++) {
-                const client = windowClients.get(i);
-                if (client.url === event.notification.data.url && 'focus' in client) {
-                    return client.focus();
+        clients.matchAll({
+            type: 'window',
+            includeUncontrolled: true
+        }).then((clientList) => {
+
+            // Bereits geöffnete App verwenden
+            for (const client of clientList) {
+                if ('focus' in client) {
+                    client.navigate(url)
+                    return client.focus()
                 }
             }
+
+            // Neue App öffnen
             if (clients.openWindow) {
-                return clients.openWindow(event.notification.data.url);
+                return clients.openWindow(url)
             }
+
+            return null
         })
-    );
-});
+    )
+})
+
+self.addEventListener('notificationclose', () => {
+    console.log('🔕 Benachrichtigung geschlossen')
+})

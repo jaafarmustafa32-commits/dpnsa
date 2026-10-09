@@ -1,523 +1,2453 @@
+
 <template>
-  <div class="page-container">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="header-inner">
-        <router-link to="/profile" class="user-info user-info-link">
-          <div class="avatar-icon">
-            <i class="fa-solid fa-user-gear"></i>
-          </div>
-          <div class="user-details">
-            <span class="user-name">{{ userName }}</span>
-            <span class="user-role">{{ isAdmin ? 'Admin Portal' : 'Mitarbeiter Portal' }}</span>
-          </div>
-        </router-link>
+  <AppShell
+      :user-name="userName"
+      :notifications="notifications"
+      :unread-count="unreadNotifications.length"
+      page-title="Gehaltsabrechnungen"
+      @mark-read="markAsRead"
+      @mark-all-read="markAllAsRead"
+  >
 
-        <!-- Mobile Menü Button -->
-        <button class="menu-toggle" @click.stop="toggleMobileMenu" aria-label="Menü öffnen">
-          <i class="fa-solid" :class="isMobileMenuOpen ? 'fa-xmark' : 'fa-bars'"></i>
-        </button>
+    <div class="salary-page">
 
-        <nav class="nav-buttons" :class="{ show: isMobileMenuOpen }">
-          <router-link to="/home" class="btn-nav" @click="closeMobileMenu">
-            <i class="fa-solid fa-calendar-days"></i> Home
-          </router-link>
-          <router-link to="/antraege" class="btn-nav" @click="closeMobileMenu">
-            <i class="fa-solid fa-file-pen"></i> Anträge
-          </router-link>
-          <router-link to="/gehalt" class="btn-nav active" @click="closeMobileMenu">
-            <i class="fa-solid fa-file-invoice-dollar"></i> Gehalt
-          </router-link>
-          <router-link to="/anweisungen" class="btn-nav" @click="closeMobileMenu">
-            <i class="fa-solid fa-file-pdf"></i> Anweisungen
-          </router-link>
-          <router-link to="/kontakt" class="btn-nav" @click="closeMobileMenu">
-            <i class="fa-solid fa-paper-plane"></i> Büro Kontakt
-          </router-link>
-          <router-link to="/profile" class="btn-nav" @click="closeMobileMenu">
-            <i class="fa-solid fa-user"></i> Profil
-          </router-link>
-          <button class="btn-nav btn-logout" @click="handleLogout">
-            <i class="fa-solid fa-right-from-bracket"></i> Logout
+      <!-- HEADER -->
+      <section class="page-heading">
+
+        <div class="heading-left">
+
+          <div class="page-icon">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+          </div>
+
+          <div>
+            <span class="eyebrow">
+              MITARBEITERPORTAL
+            </span>
+
+            <h1>
+              Gehaltsabrechnungen
+            </h1>
+
+            <p>
+              Ihre monatlichen Lohnzettel und Auszahlungen.
+            </p>
+          </div>
+
+        </div>
+
+        <div class="heading-actions">
+
+          <button
+              class="refresh-button"
+              :class="{ spinning: loading }"
+              @click="fetchSalaries"
+              :disabled="loading"
+          >
+            <i class="fa-solid fa-rotate-right"></i>
+            <span>Aktualisieren</span>
           </button>
-        </nav>
-      </div>
-    </header>
 
-    <!-- Main Content Container -->
-    <main class="app-main">
-      <div class="section-title">
-        <h2><i class="fa-solid fa-file-invoice-dollar"></i> Gehaltsabrechnungen</h2>
-        <p>Übersicht Ihrer monatlichen Lohnzettel und Auszahlungen.</p>
-      </div>
+        </div>
 
-      <!-- Upload-Bereich: Wird NUR für Admins angezeigt -->
-      <div v-if="isAdmin" class="upload-card">
-        <h3><i class="fa-solid fa-cloud-arrow-up"></i> Neuen Lohnzettel hochladen</h3>
-        <form @submit.prevent="uploadSalaryPdf" class="upload-form">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Monat</label>
-              <select v-model="newSalary.month" required class="form-input">
-                <option value="" disabled>Monat wählen</option>
-                <option v-for="m in ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']" :key="m" :value="m">{{ m }}</option>
-              </select>
+      </section>
+
+
+      <!-- ADMIN UPLOAD -->
+      <section
+          v-if="isAdmin"
+          class="upload-card"
+      >
+
+        <div class="card-header">
+
+          <div class="card-title">
+
+            <div class="card-icon blue">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
             </div>
-            <div class="form-group">
-              <label>Jahr</label>
-              <input type="number" v-model="newSalary.year" required class="form-input" />
-            </div>
-            <div class="form-group">
-              <label>Netto (€)</label>
-              <input type="text" v-model="newSalary.netto" placeholder="z.B. 2.140,50" required class="form-input" />
-            </div>
-            <div class="form-group">
-              <label>Brutto (€)</label>
-              <input type="text" v-model="newSalary.brutto" placeholder="z.B. 3.050,00" required class="form-input" />
-            </div>
-          </div>
 
-          <div class="form-group full-width">
-            <label>Lohnzettel PDF Datei</label>
-            <input type="file" @change="handleFileChange" accept="application/pdf" required class="form-input file-input" />
-          </div>
-
-          <button type="submit" class="btn-submit" :disabled="uploading">
-            <i class="fa-solid fa-upload"></i> {{ uploading ? 'Wird hochgeladen...' : 'Lohnzettel hochladen' }}
-          </button>
-        </form>
-      </div>
-
-      <!-- Ladeanzeige -->
-      <div v-if="loading" class="text-center" style="padding: 30px; color: #94a3b8; text-align: center;">
-        Lade Lohnzettel...
-      </div>
-
-      <!-- Gehaltsliste / Karten -->
-      <div v-else class="salary-list">
-        <div v-for="item in salaryData" :key="item.id" class="salary-card">
-          <div class="salary-info">
-            <div class="salary-icon"><i class="fa-solid fa-file-pdf"></i></div>
             <div>
-              <h3>{{ item.month }} {{ item.year }}</h3>
-              <span class="salary-amount">Netto: <strong>{{ item.netto }} €</strong> (Brutto: {{ item.brutto }} €)</span>
+              <h2>
+                Lohnzettel hochladen
+              </h2>
+
+              <p>
+                Neue Gehaltsabrechnung für Mitarbeiter hinterlegen.
+              </p>
             </div>
+
           </div>
 
-          <div class="salary-action">
-            <span class="badge-status success">Ausbezahlt</span>
-            <a v-if="item.file_url" :href="item.file_url" target="_blank" class="btn-download">
-              <i class="fa-solid fa-download"></i> Lohnzettel
-            </a>
-          </div>
+          <span class="admin-badge">
+            <i class="fa-solid fa-shield-halved"></i>
+            ADMIN
+          </span>
+
         </div>
 
-        <!-- Fallback wenn keine Lohnzettel da sind -->
-        <div v-if="salaryData.length === 0" class="empty-state">
-          <i class="fa-solid fa-folder-open"></i>
-          <p>Keine Gehaltsabrechnungen vorhanden.</p>
+
+        <form
+            class="upload-form"
+            @submit.prevent="uploadSalaryPdf"
+        >
+
+          <div class="form-grid">
+
+            <!-- Monat -->
+            <div class="form-group">
+
+              <label>
+                Monat
+              </label>
+
+              <div class="input-container">
+
+                <i class="fa-regular fa-calendar"></i>
+
+                <select
+                    v-model="newSalary.month"
+                    required
+                >
+
+                  <option
+                      value=""
+                      disabled
+                  >
+                    Monat wählen
+                  </option>
+
+                  <option
+                      v-for="month in months"
+                      :key="month"
+                      :value="month"
+                  >
+                    {{ month }}
+                  </option>
+
+                </select>
+
+              </div>
+
+            </div>
+
+
+            <!-- Jahr -->
+            <div class="form-group">
+
+              <label>
+                Jahr
+              </label>
+
+              <div class="input-container">
+
+                <i class="fa-regular fa-calendar-days"></i>
+
+                <input
+                    v-model="newSalary.year"
+                    type="number"
+                    required
+                />
+
+              </div>
+
+            </div>
+
+
+            <!-- Netto -->
+            <div class="form-group">
+
+              <label>
+                Netto
+              </label>
+
+              <div class="input-container">
+
+                <i class="fa-solid fa-euro-sign"></i>
+
+                <input
+                    v-model="newSalary.netto"
+                    type="text"
+                    placeholder="2.140,50"
+                    required
+                />
+
+              </div>
+
+            </div>
+
+
+            <!-- Brutto -->
+            <div class="form-group">
+
+              <label>
+                Brutto
+              </label>
+
+              <div class="input-container">
+
+                <i class="fa-solid fa-euro-sign"></i>
+
+                <input
+                    v-model="newSalary.brutto"
+                    type="text"
+                    placeholder="3.050,00"
+                    required
+                />
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+          <!-- PDF -->
+          <div class="file-section">
+
+            <label>
+              Lohnzettel PDF
+            </label>
+
+            <label class="file-dropzone">
+
+              <input
+                  type="file"
+                  accept="application/pdf"
+                  @change="handleFileChange"
+                  required
+              />
+
+              <div class="file-icon">
+                <i class="fa-solid fa-file-pdf"></i>
+              </div>
+
+              <div class="file-info">
+
+                <strong v-if="selectedFile">
+                  {{ selectedFile.name }}
+                </strong>
+
+                <strong v-else>
+                  PDF-Datei auswählen
+                </strong>
+
+                <span v-if="selectedFile">
+                  {{ formatFileSize(selectedFile.size) }}
+                </span>
+
+                <span v-else>
+                  Klicken oder Datei hier auswählen
+                </span>
+
+              </div>
+
+              <i class="fa-solid fa-arrow-up-from-bracket upload-arrow"></i>
+
+            </label>
+
+          </div>
+
+
+          <!-- SUBMIT -->
+          <button
+              type="submit"
+              class="upload-button"
+              :disabled="uploading"
+          >
+
+            <i
+                v-if="!uploading"
+                class="fa-solid fa-cloud-arrow-up"
+            ></i>
+
+            <i
+                v-else
+                class="fa-solid fa-circle-notch fa-spin"
+            ></i>
+
+            {{
+              uploading
+                  ? 'Wird hochgeladen...'
+                  : 'Lohnzettel hochladen'
+            }}
+
+          </button>
+
+        </form>
+
+      </section>
+
+
+      <!-- OVERVIEW -->
+      <section class="overview-grid">
+
+        <div class="overview-card">
+
+          <div class="overview-icon blue">
+            <i class="fa-solid fa-file-lines"></i>
+          </div>
+
+          <div>
+            <span>Abrechnungen</span>
+            <strong>{{ salaryData.length }}</strong>
+          </div>
+
         </div>
-      </div>
-    </main>
-  </div>
+
+
+        <div class="overview-card">
+
+          <div class="overview-icon green">
+            <i class="fa-solid fa-circle-check"></i>
+          </div>
+
+          <div>
+            <span>Status</span>
+            <strong>Ausbezahlt</strong>
+          </div>
+
+        </div>
+
+
+        <div class="overview-card">
+
+          <div class="overview-icon purple">
+            <i class="fa-solid fa-calendar-check"></i>
+          </div>
+
+          <div>
+            <span>Letzte Abrechnung</span>
+
+            <strong>
+              {{
+                salaryData.length
+                    ? `${salaryData[0].month} ${salaryData[0].year}`
+                    : '—'
+              }}
+            </strong>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <!-- LIST HEADER -->
+      <section class="list-section">
+
+        <div class="list-header">
+
+          <div>
+
+            <span class="eyebrow">
+              DOKUMENTE
+            </span>
+
+            <h2>
+              Meine Gehaltsabrechnungen
+            </h2>
+
+          </div>
+
+          <span class="document-count">
+            {{ salaryData.length }}
+            {{ salaryData.length === 1 ? 'Dokument' : 'Dokumente' }}
+          </span>
+
+        </div>
+
+
+        <!-- LOADING -->
+        <div
+            v-if="loading"
+            class="loading-card"
+        >
+
+          <div class="loading-spinner">
+            <i class="fa-solid fa-circle-notch fa-spin"></i>
+          </div>
+
+          <strong>
+            Gehaltsabrechnungen werden geladen
+          </strong>
+
+          <span>
+            Bitte einen Moment warten...
+          </span>
+
+        </div>
+
+
+        <!-- LIST -->
+        <div
+            v-else-if="salaryData.length"
+            class="salary-list"
+        >
+
+          <article
+              v-for="item in salaryData"
+              :key="item.id"
+              class="salary-card"
+          >
+
+            <div class="salary-main">
+
+              <div class="pdf-icon">
+                <i class="fa-solid fa-file-pdf"></i>
+              </div>
+
+              <div class="salary-details">
+
+                <div class="salary-title-row">
+
+                  <h3>
+                    {{ item.month }} {{ item.year }}
+                  </h3>
+
+                  <span class="paid-badge">
+                    <i class="fa-solid fa-check"></i>
+                    Ausbezahlt
+                  </span>
+
+                </div>
+
+                <div class="salary-values">
+
+                  <div class="salary-value">
+
+                    <span>
+                      Netto
+                    </span>
+
+                    <strong>
+                      {{ item.netto }} €
+                    </strong>
+
+                  </div>
+
+                  <div class="salary-divider"></div>
+
+                  <div class="salary-value">
+
+                    <span>
+                      Brutto
+                    </span>
+
+                    <strong class="gross">
+                      {{ item.brutto }} €
+                    </strong>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <div class="salary-action">
+
+              <a
+                  v-if="item.file_url"
+                  :href="item.file_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="download-button"
+              >
+
+                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+
+                <span>
+                  Lohnzettel öffnen
+                </span>
+
+              </a>
+
+            </div>
+
+          </article>
+
+        </div>
+
+
+        <!-- EMPTY -->
+        <div
+            v-else
+            class="empty-card"
+        >
+
+          <div class="empty-icon">
+            <i class="fa-regular fa-folder-open"></i>
+          </div>
+
+          <h3>
+            Noch keine Gehaltsabrechnungen
+          </h3>
+
+          <p>
+            Sobald ein Lohnzettel verfügbar ist,
+            wird er hier angezeigt.
+          </p>
+
+        </div>
+
+      </section>
+
+    </div>
+
+  </AppShell>
 </template>
 
+
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { supabase } from '@/config/supabase.js'
+
+import {
+  ref,
+  onMounted,
+  onUnmounted
+} from 'vue'
+
+import {
+  useRouter
+} from 'vue-router'
+
+import AppShell from '@/components/AppShell.vue'
+import { useAppStore } from '@/stores/app.js'
+
+import {
+  supabase
+} from '@/config/supabase.js'
+
 
 const router = useRouter()
-const isMobileMenuOpen = ref(false)
-const salaryData = ref([])
-const loading = ref(true)
-const uploading = ref(false)
+
+const { initTheme } = useAppStore()
+
+
+/* =====================================================
+   USER
+===================================================== */
+
 const userName = ref('Mitarbeiter')
+
 const isAdmin = ref(false)
 
-const newSalary = ref({
-  month: '',
-  year: new Date().getFullYear(),
-  netto: '',
-  brutto: ''
-})
+
+/* =====================================================
+   NOTIFICATIONS
+===================================================== */
+
+const notifications = ref([])
+
+
+const unreadNotifications = ref([])
+
+
+const markAsRead = (notificationId) => {
+
+  const notification =
+      notifications.value.find(
+          item => item.id === notificationId
+      )
+
+  if (notification) {
+    notification.read = true
+  }
+
+  unreadNotifications.value =
+      notifications.value.filter(
+          item => !item.read
+      )
+
+}
+
+
+const markAllAsRead = () => {
+
+  notifications.value.forEach(
+      notification => {
+        notification.read = true
+      }
+  )
+
+  unreadNotifications.value = []
+
+}
+
+
+/* =====================================================
+   SALARY
+===================================================== */
+
+const salaryData = ref([])
+
+const loading = ref(true)
+
+const uploading = ref(false)
+
 const selectedFile = ref(null)
 
-onMounted(async () => {
-  const userJson = localStorage.getItem('currentUser')
-  if (userJson) {
-    try {
-      const user = JSON.parse(userJson)
-      if (user && user.name) {
-        userName.value = user.name
-      }
-      // Prüfen ob der User Admin ist (passe hier die E-Mail oder Rolle an deine DB/LocalStorage an)
-      if (user && (user.email === 'deine-admin-email@domain.at' || user.role === 'admin')) {
-        isAdmin.value = true
-      }
-    } catch (e) {
-      console.error('Fehler beim Parsen des Users', e)
-    }
+
+const newSalary = ref({
+
+  month: '',
+
+  year: new Date().getFullYear(),
+
+  netto: '',
+
+  brutto: ''
+
+})
+
+
+const months = [
+
+  'Januar',
+  'Februar',
+  'März',
+  'April',
+  'Mai',
+  'Juni',
+  'Juli',
+  'August',
+  'September',
+  'Oktober',
+  'November',
+  'Dezember'
+
+]
+
+
+/* =====================================================
+   USER LADEN
+===================================================== */
+
+const loadCurrentUser = () => {
+
+  const userJson =
+      localStorage.getItem('currentUser')
+
+
+  if (!userJson) {
+
+    router.push('/login')
+
+    return
+
   }
 
-  window.addEventListener('resize', checkScreenSize)
-  await fetchSalaries()
-})
 
-onUnmounted(() => {
-  window.removeEventListener('resize', checkScreenSize)
-})
+  try {
+
+    const user =
+        JSON.parse(userJson)
+
+
+    if (user?.name) {
+
+      userName.value =
+          user.name
+
+    }
+
+
+    isAdmin.value =
+        user?.role === 'admin'
+
+
+  } catch (error) {
+
+    console.error(
+        'Fehler beim Parsen des Users:',
+        error
+    )
+
+    localStorage.removeItem(
+        'currentUser'
+    )
+
+    router.push('/login')
+
+  }
+
+}
+
+
+/* =====================================================
+   GEHALT LADEN
+===================================================== */
 
 const fetchSalaries = async () => {
-  loading.value = true
-  const { data, error } = await supabase
-      .from('salaries')
-      .select('*')
-      .order('created_at', { ascending: false })
 
-  if (error) {
-    console.error('Fehler beim Laden der Lohnzettel:', error.message)
-  } else if (data) {
-    salaryData.value = data
+  loading.value = true
+
+
+  try {
+
+    const {
+      data,
+      error
+    } = await supabase
+
+        .from('salaries')
+
+        .select('*')
+
+        .order(
+            'created_at',
+            {
+              ascending: false
+            }
+        )
+
+
+    if (error) {
+
+      console.error(
+          'Fehler beim Laden der Lohnzettel:',
+          error.message
+      )
+
+      return
+
+    }
+
+
+    salaryData.value =
+        data || []
+
+
+  } finally {
+
+    loading.value = false
+
   }
-  loading.value = false
+
 }
+
+
+/* =====================================================
+   FILE
+===================================================== */
 
 const handleFileChange = (event) => {
-  selectedFile.value = event.target.files[0]
+
+  selectedFile.value =
+      event.target.files?.[0] || null
+
 }
+
+
+const formatFileSize = (bytes) => {
+
+  if (!bytes) {
+    return '0 KB'
+  }
+
+
+  const kb =
+      bytes / 1024
+
+
+  if (kb < 1024) {
+
+    return `${Math.round(kb)} KB`
+
+  }
+
+
+  return `${(kb / 1024).toFixed(1)} MB`
+
+}
+
+
+/* =====================================================
+   UPLOAD
+===================================================== */
 
 const uploadSalaryPdf = async () => {
+
   if (!selectedFile.value) {
-    alert('Bitte wähle eine PDF-Datei aus.')
+
+    alert(
+        'Bitte wähle eine PDF-Datei aus.'
+    )
+
     return
+
   }
+
+
+  if (
+      selectedFile.value.type !==
+      'application/pdf'
+  ) {
+
+    alert(
+        'Bitte nur PDF-Dateien hochladen.'
+    )
+
+    return
+
+  }
+
 
   uploading.value = true
+
+
   try {
-    const fileExt = selectedFile.value.name.split('.').pop()
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`
-    const filePath = `salaries/${fileName}`
 
-    // 1. Datei in Storage hochladen
-    const { error: uploadError } = await supabase.storage
+    const fileExt =
+        selectedFile.value.name
+            .split('.')
+            .pop()
+
+
+    const fileName =
+        `${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 9)}.${fileExt}`
+
+
+    const filePath =
+        `salaries/${fileName}`
+
+
+    /* -----------------------------
+       STORAGE
+    ----------------------------- */
+
+    const {
+      error: uploadError
+    } = await supabase.storage
+
         .from('documents')
-        .upload(filePath, selectedFile.value)
 
-    if (uploadError) throw uploadError
+        .upload(
+            filePath,
+            selectedFile.value
+        )
 
-    // 2. Öffentliche URL abrufen
-    const { data: publicUrlData } = supabase.storage
+
+    if (uploadError) {
+      throw uploadError
+    }
+
+
+    /* -----------------------------
+       PUBLIC URL
+    ----------------------------- */
+
+    const {
+      data: publicUrlData
+    } = supabase.storage
+
         .from('documents')
+
         .getPublicUrl(filePath)
 
-    const fileUrl = publicUrlData.publicUrl
 
-    // 3. Datensatz in die Tabelle eintragen
-    const { error: dbError } = await supabase
+    const fileUrl =
+        publicUrlData.publicUrl
+
+
+    /* -----------------------------
+       DATABASE
+    ----------------------------- */
+
+    const {
+      error: dbError
+    } = await supabase
+
         .from('salaries')
+
         .insert([{
-          month: newSalary.value.month,
-          year: Number(newSalary.value.year),
-          netto: newSalary.value.netto,
-          brutto: newSalary.value.brutto,
-          file_url: fileUrl
+
+          month:
+          newSalary.value.month,
+
+          year:
+              Number(
+                  newSalary.value.year
+              ),
+
+          netto:
+          newSalary.value.netto,
+
+          brutto:
+          newSalary.value.brutto,
+
+          file_url:
+          fileUrl
+
         }])
 
-    if (dbError) throw dbError
 
-    alert('Lohnzettel erfolgreich hochgeladen!')
+    if (dbError) {
+      throw dbError
+    }
 
-    // Formular zurücksetzen
-    newSalary.value.month = ''
-    newSalary.value.netto = ''
-    newSalary.value.brutto = ''
+
+    alert(
+        'Lohnzettel erfolgreich hochgeladen!'
+    )
+
+
+    /* -----------------------------
+       RESET
+    ----------------------------- */
+
+    newSalary.value = {
+
+      month: '',
+
+      year:
+          new Date().getFullYear(),
+
+      netto: '',
+
+      brutto: ''
+
+    }
+
+
     selectedFile.value = null
 
-    // Liste neu laden
+
     await fetchSalaries()
-  } catch (err) {
-    console.error('Fehler beim Upload:', err)
-    alert('Fehler beim Hochladen (Keine Berechtigung?): ' + (err.message || err))
+
+
+  } catch (error) {
+
+    console.error(
+        'Fehler beim Upload:',
+        error
+    )
+
+
+    alert(
+        'Fehler beim Hochladen: ' +
+        (error.message || error)
+    )
+
+
   } finally {
+
     uploading.value = false
+
   }
+
 }
 
-const toggleMobileMenu = () => {
-  isMobileMenuOpen.value = !isMobileMenuOpen.value
-}
 
-const closeMobileMenu = () => {
-  isMobileMenuOpen.value = false
-}
+/* =====================================================
+   RESIZE
+===================================================== */
 
 const checkScreenSize = () => {
-  if (window.innerWidth > 768) {
-    isMobileMenuOpen.value = false
-  }
+
+  // AppShell verwaltet das Menü.
+  // Diese Funktion bleibt bewusst leer,
+  // damit keine zweite Navigation entsteht.
+
 }
 
-const handleLogout = () => {
-  localStorage.removeItem('currentUser')
+
+/* =====================================================
+   LOGOUT
+===================================================== */
+
+const handleLogout = async () => {
+
+  localStorage.removeItem(
+      'currentUser'
+  )
+
+  try {
+
+    await supabase.auth.signOut()
+
+  } catch (error) {
+
+    console.warn(
+        'Supabase Logout:',
+        error
+    )
+
+  }
+
+
   router.push('/login')
+
 }
+
+
+/* =====================================================
+   INIT
+===================================================== */
+
+onMounted(async () => {
+  initTheme()
+  loadCurrentUser()
+
+  window.addEventListener(
+      'resize',
+      checkScreenSize
+  )
+
+  await fetchSalaries()
+
+})
+
+
+onUnmounted(() => {
+
+  window.removeEventListener(
+      'resize',
+      checkScreenSize
+  )
+
+})
+
 </script>
 
+
 <style scoped>
-/* Styles bleiben unverändert wie zuvor */
-*, *::before, *::after {
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
-}
 
-.page-container {
-  min-height: 100vh;
-  min-height: 100dvh;
-  width: 100%;
-  color: #f8fafc;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
-  display: flex;
-  flex-direction: column;
-  background-color: #0b0f19;
-}
+/* =====================================================
+   PAGE
+===================================================== */
 
-.app-header {
-  background: rgba(15, 23, 42, 0.95);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-  width: 100%;
-}
+.salary-page {
 
-.header-inner {
   width: 100%;
-  max-width: 1200px;
+
+  max-width: 1180px;
+
   margin: 0 auto;
-  padding: 14px 24px;
+
+  padding: 30px;
+
+  color: var(--app-text, #f8fafc);
+
+}
+
+
+/* =====================================================
+   HEADER
+===================================================== */
+
+.page-heading {
+
   display: flex;
+
+  align-items: center;
+
   justify-content: space-between;
-  align-items: center;
-  position: relative;
+
   gap: 24px;
+
+  margin-bottom: 28px;
+
 }
 
-.user-info-link { text-decoration: none; flex-shrink: 0; }
-.user-info { display: flex; align-items: center; gap: 12px; }
 
-.avatar-icon {
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-  border-radius: 12px;
+.heading-left {
+
   display: flex;
+
   align-items: center;
+
+  gap: 16px;
+
+}
+
+
+.page-icon {
+
+  width: 54px;
+
+  height: 54px;
+
+  display: flex;
+
+  align-items: center;
+
   justify-content: center;
-  font-size: 1.05rem;
-  color: #fff;
+
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+
+  border-radius: 16px;
+
+  color: #60a5fa;
+
+  background:
+      rgba(59,130,246,.12);
+
+  border:
+      1px solid
+      rgba(59,130,246,.20);
+
+  font-size: 21px;
+
 }
 
-.user-details { display: flex; flex-direction: column; text-align: left; }
-.user-name { font-size: 0.9rem; font-weight: 600; color: #f8fafc; line-height: 1.2; white-space: nowrap; }
-.user-role { font-size: 0.72rem; color: #94a3b8; margin-top: 2px; }
 
-.menu-toggle {
-  display: none;
-  background: none;
-  border: none;
-  font-size: 1.4rem;
-  color: #f8fafc;
-  cursor: pointer;
-  padding: 8px;
+.eyebrow {
+
+  display: block;
+
+  margin-bottom: 5px;
+
+  color: #60a5fa;
+
+  font-size: 10px;
+
+  font-weight: 800;
+
+  letter-spacing: 1.5px;
+
 }
 
-.nav-buttons {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+
+.page-heading h1 {
+
+  margin: 0;
+
+  color: var(--app-heading, #f8fafc);
+
+  font-size: 27px;
+
+  letter-spacing: -.6px;
+
 }
 
-.btn-nav {
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #cbd5e1;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  text-decoration: none;
-  font-size: 0.8rem;
-  font-weight: 500;
+
+.page-heading p {
+
+  margin: 5px 0 0;
+
+  color: var(--app-muted, #7f8da3);
+
+  font-size: 13px;
+
+}
+
+
+.refresh-button {
+
+  height: 40px;
+
   display: inline-flex;
+
   align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  transition: all 0.2s ease;
+
+  gap: 8px;
+
+  padding: 0 14px;
+
+  border:
+      1px solid
+      var(--app-border, rgba(255,255,255,.08));
+
+  border-radius: 10px;
+
+  color: var(--app-text, #cbd5e1);
+
+  background:
+      var(--app-surface, #111c2c);
+
+  cursor: pointer;
+
 }
 
-.btn-nav:active { transform: scale(0.96); }
-.btn-nav.router-link-active, .btn-nav.active { background: #2563eb; border-color: #3b82f6; color: #fff; }
-.btn-logout { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border-color: rgba(239, 68, 68, 0.2); }
 
-.app-main {
-  flex: 1;
-  padding: 24px;
-  max-width: 1200px;
-  width: 100%;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.refresh-button:hover {
+
+  border-color:
+      rgba(59,130,246,.4);
+
+  color: #60a5fa;
+
 }
 
-.section-title h2 { font-size: 1.3rem; color: #fff; margin: 0 0 4px 0; display: flex; align-items: center; gap: 10px; }
-.section-title p { font-size: 0.85rem; color: #94a3b8; margin: 0; }
+
+.refresh-button.spinning i {
+
+  animation:
+      spin .8s linear infinite;
+
+}
+
+
+@keyframes spin {
+
+  to {
+    transform: rotate(360deg);
+  }
+
+}
+
+
+/* =====================================================
+   UPLOAD CARD
+===================================================== */
 
 .upload-card {
-  background: #161e2e;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 20px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  margin-bottom: 10px;
-}
-.upload-card h3 { font-size: 1.05rem; color: #fff; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-.upload-form { display: flex; flex-direction: column; gap: 14px; }
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
-.form-group { display: flex; flex-direction: column; gap: 6px; text-align: left; }
-.form-group.full-width { grid-column: 1 / -1; }
-.form-group label { font-size: 0.8rem; color: #94a3b8; font-weight: 500; }
-.form-input {
-  background: #0b0f19;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fff;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  outline: none;
-}
-.form-input:focus { border-color: #3b82f6; }
-.file-input { padding: 8px; cursor: pointer; }
 
-.btn-submit {
-  background: #10b981;
-  color: #fff;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: background 0.2s;
-  margin-top: 4px;
+  padding: 24px;
+
+  margin-bottom: 22px;
+
+  border:
+      1px solid
+      var(--app-border, rgba(255,255,255,.08));
+
+  border-radius: 18px;
+
+  background:
+      var(--app-surface, #101b2b);
+
+  box-shadow:
+      0 14px 40px
+      rgba(0,0,0,.12);
+
 }
-.btn-submit:hover { background: #059669; }
-.btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+
+.card-header {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 20px;
+
+  margin-bottom: 24px;
+
+}
+
+
+.card-title {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 13px;
+
+}
+
+
+.card-icon {
+
+  width: 42px;
+
+  height: 42px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  border-radius: 12px;
+
+}
+
+
+.card-icon.blue {
+
+  color: #60a5fa;
+
+  background:
+      rgba(59,130,246,.12);
+
+}
+
+
+.card-title h2 {
+
+  margin: 0;
+
+  color: var(--app-heading, #f8fafc);
+
+  font-size: 15px;
+
+}
+
+
+.card-title p {
+
+  margin: 4px 0 0;
+
+  color: var(--app-muted, #7f8da3);
+
+  font-size: 12px;
+
+}
+
+
+.admin-badge {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 6px;
+
+  padding: 6px 9px;
+
+  border-radius: 8px;
+
+  color: #a5b4fc;
+
+  background:
+      rgba(99,102,241,.10);
+
+  border:
+      1px solid
+      rgba(99,102,241,.18);
+
+  font-size: 9px;
+
+  font-weight: 800;
+
+  letter-spacing: .8px;
+
+}
+
+
+/* =====================================================
+   FORM
+===================================================== */
+
+.upload-form {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 18px;
+
+}
+
+
+.form-grid {
+
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0,1fr));
+
+  gap: 13px;
+
+}
+
+
+.form-group {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 7px;
+
+}
+
+
+.form-group label,
+.file-section > label {
+
+  color: var(--app-muted, #8b98ab);
+
+  font-size: 11px;
+
+  font-weight: 650;
+
+}
+
+
+.input-container {
+
+  position: relative;
+
+}
+
+
+.input-container > i {
+
+  position: absolute;
+
+  left: 13px;
+
+  top: 50%;
+
+  transform: translateY(-50%);
+
+  color: #526176;
+
+  font-size: 12px;
+
+  pointer-events: none;
+
+}
+
+
+.input-container input,
+.input-container select {
+
+  width: 100%;
+
+  height: 45px;
+
+  padding:
+      0 12px 0 37px;
+
+  border:
+      1px solid
+      var(--app-border, rgba(255,255,255,.08));
+
+  border-radius: 10px;
+
+  outline: none;
+
+  color: var(--app-text, #f8fafc);
+
+  background:
+      var(--app-input, #0b1524);
+
+  font-size: 13px;
+
+}
+
+
+.input-container input:focus,
+.input-container select:focus {
+
+  border-color: #3b82f6;
+
+  box-shadow:
+      0 0 0 3px
+      rgba(59,130,246,.10);
+
+}
+
+
+/* =====================================================
+   FILE
+===================================================== */
+
+.file-section {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 7px;
+
+}
+
+
+.file-dropzone {
+
+  min-height: 70px;
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 13px;
+
+  padding: 12px 14px;
+
+  border:
+      1px dashed
+      var(--app-border, rgba(255,255,255,.12));
+
+  border-radius: 12px;
+
+  background:
+      var(--app-input, #0b1524);
+
+  cursor: pointer;
+
+  transition:
+      border-color .2s,
+      background .2s;
+
+}
+
+
+.file-dropzone:hover {
+
+  border-color: #3b82f6;
+
+  background:
+      rgba(59,130,246,.04);
+
+}
+
+
+.file-dropzone input {
+
+  display: none;
+
+}
+
+
+.file-icon {
+
+  width: 42px;
+
+  height: 42px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  border-radius: 11px;
+
+  color: #f87171;
+
+  background:
+      rgba(239,68,68,.10);
+
+  font-size: 17px;
+
+}
+
+
+.file-info {
+
+  flex: 1;
+
+  min-width: 0;
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 3px;
+
+}
+
+
+.file-info strong {
+
+  overflow: hidden;
+
+  color: var(--app-heading, #f8fafc);
+
+  font-size: 12px;
+
+  text-overflow: ellipsis;
+
+  white-space: nowrap;
+
+}
+
+
+.file-info span {
+
+  color: var(--app-muted, #6f7e93);
+
+  font-size: 10px;
+
+}
+
+
+.upload-arrow {
+
+  color: #64748b;
+
+}
+
+
+/* =====================================================
+   BUTTON
+===================================================== */
+
+.upload-button {
+
+  height: 45px;
+
+  align-self: flex-start;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 8px;
+
+  padding: 0 18px;
+
+  border: 0;
+
+  border-radius: 10px;
+
+  color: white;
+
+  background:
+      linear-gradient(
+          135deg,
+          #3b82f6,
+          #2563eb
+      );
+
+  font-size: 12px;
+
+  font-weight: 700;
+
+  cursor: pointer;
+
+}
+
+
+.upload-button:hover:not(:disabled) {
+
+  filter: brightness(1.08);
+
+}
+
+
+.upload-button:disabled {
+
+  opacity: .6;
+
+  cursor: not-allowed;
+
+}
+
+
+/* =====================================================
+   OVERVIEW
+===================================================== */
+
+.overview-grid {
+
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, 1fr);
+
+  gap: 13px;
+
+  margin-bottom: 30px;
+
+}
+
+
+.overview-card {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 13px;
+
+  padding: 16px;
+
+  border:
+      1px solid
+      var(--app-border, rgba(255,255,255,.07));
+
+  border-radius: 15px;
+
+  background:
+      var(--app-surface, #101b2b);
+
+}
+
+
+.overview-icon {
+
+  width: 40px;
+
+  height: 40px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  flex-shrink: 0;
+
+  border-radius: 11px;
+
+}
+
+
+.overview-icon.blue {
+
+  color: #60a5fa;
+
+  background:
+      rgba(59,130,246,.11);
+
+}
+
+
+.overview-icon.green {
+
+  color: #34d399;
+
+  background:
+      rgba(16,185,129,.11);
+
+}
+
+
+.overview-icon.purple {
+
+  color: #a78bfa;
+
+  background:
+      rgba(139,92,246,.11);
+
+}
+
+
+.overview-card div:last-child {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 3px;
+
+}
+
+
+.overview-card span {
+
+  color: var(--app-muted, #718096);
+
+  font-size: 10px;
+
+}
+
+
+.overview-card strong {
+
+  color: var(--app-heading, #f8fafc);
+
+  font-size: 14px;
+
+}
+
+
+/* =====================================================
+   LIST
+===================================================== */
+
+.list-section {
+
+  width: 100%;
+
+}
+
+
+.list-header {
+
+  display: flex;
+
+  align-items: flex-end;
+
+  justify-content: space-between;
+
+  gap: 15px;
+
+  margin-bottom: 14px;
+
+}
+
+
+.list-header h2 {
+
+  margin: 0;
+
+  color: var(--app-heading, #f8fafc);
+
+  font-size: 19px;
+
+  letter-spacing: -.3px;
+
+}
+
+
+.document-count {
+
+  padding: 5px 9px;
+
+  border-radius: 7px;
+
+  color: var(--app-muted, #94a3b8);
+
+  background:
+      var(--app-surface, #101b2b);
+
+  font-size: 10px;
+
+}
+
+
+/* =====================================================
+   SALARY CARD
+===================================================== */
 
 .salary-list {
+
   display: flex;
+
   flex-direction: column;
-  gap: 12px;
-  width: 100%;
+
+  gap: 10px;
+
 }
+
 
 .salary-card {
-  background: #161e2e;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 14px;
-  padding: 16px 20px;
+
   display: flex;
+
   align-items: center;
+
   justify-content: space-between;
-  width: 100%;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  gap: 16px;
+
+  gap: 20px;
+
+  padding: 17px;
+
+  border:
+      1px solid
+      var(--app-border, rgba(255,255,255,.07));
+
+  border-radius: 15px;
+
+  background:
+      var(--app-surface, #101b2b);
+
+  transition:
+      transform .2s,
+      border-color .2s;
+
 }
 
-.salary-info { display: flex; align-items: center; gap: 14px; }
-.salary-icon { width: 42px; height: 42px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
-.salary-card h3 { font-size: 1rem; color: #fff; margin: 0 0 4px 0; }
-.salary-amount { font-size: 0.82rem; color: #94a3b8; }
-.salary-amount strong { color: #34d399; }
 
-.salary-action { display: flex; align-items: center; gap: 14px; }
+.salary-card:hover {
 
-.badge-status {
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 0.72rem;
-  font-weight: 700;
+  transform: translateY(-1px);
+
+  border-color:
+      rgba(59,130,246,.22);
+
 }
-.badge-status.success { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
 
-.btn-download {
-  background: #2563eb;
-  color: #fff;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
+
+.salary-main {
+
+  display: flex;
+
   align-items: center;
-  gap: 6px;
+
+  gap: 13px;
+
+  min-width: 0;
+
+}
+
+
+.pdf-icon {
+
+  width: 45px;
+
+  height: 45px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  flex-shrink: 0;
+
+  border-radius: 12px;
+
+  color: #f87171;
+
+  background:
+      rgba(239,68,68,.10);
+
+  font-size: 18px;
+
+}
+
+
+.salary-details {
+
+  min-width: 0;
+
+}
+
+
+.salary-title-row {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 10px;
+
+  flex-wrap: wrap;
+
+}
+
+
+.salary-title-row h3 {
+
+  margin: 0;
+
+  color: var(--app-heading, #f8fafc);
+
+  font-size: 14px;
+
+}
+
+
+.paid-badge {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 5px;
+
+  padding: 4px 7px;
+
+  border-radius: 6px;
+
+  color: #34d399;
+
+  background:
+      rgba(16,185,129,.09);
+
+  font-size: 9px;
+
+  font-weight: 750;
+
+}
+
+
+.salary-values {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 13px;
+
+  margin-top: 6px;
+
+}
+
+
+.salary-value {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 5px;
+
+}
+
+
+.salary-value span {
+
+  color: var(--app-muted, #718096);
+
+  font-size: 10px;
+
+}
+
+
+.salary-value strong {
+
+  color: #34d399;
+
+  font-size: 12px;
+
+}
+
+
+.salary-value strong.gross {
+
+  color: var(--app-heading, #cbd5e1);
+
+}
+
+
+.salary-divider {
+
+  width: 1px;
+
+  height: 15px;
+
+  background:
+      var(--app-border, rgba(255,255,255,.1));
+
+}
+
+
+.salary-action {
+
+  flex-shrink: 0;
+
+}
+
+
+.download-button {
+
+  height: 38px;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 7px;
+
+  padding: 0 12px;
+
+  border:
+      1px solid
+      rgba(59,130,246,.22);
+
+  border-radius: 9px;
+
+  color: #60a5fa;
+
+  background:
+      rgba(59,130,246,.08);
+
+  font-size: 10px;
+
+  font-weight: 700;
+
   text-decoration: none;
-  transition: background 0.2s;
-  white-space: nowrap;
-}
-.btn-download:hover { background: #1d4ed8; }
 
-.empty-state {
+  transition: all .2s;
+
+}
+
+
+.download-button:hover {
+
+  color: white;
+
+  background: #2563eb;
+
+  border-color: #2563eb;
+
+}
+
+
+/* =====================================================
+   LOADING
+===================================================== */
+
+.loading-card {
+
+  min-height: 180px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 7px;
+
+  border:
+      1px solid
+      var(--app-border, rgba(255,255,255,.07));
+
+  border-radius: 15px;
+
+  background:
+      var(--app-surface, #101b2b);
+
+}
+
+
+.loading-spinner {
+
+  margin-bottom: 5px;
+
+  color: #60a5fa;
+
+  font-size: 22px;
+
+}
+
+
+.loading-card strong {
+
+  color: var(--app-heading, #e2e8f0);
+
+  font-size: 12px;
+
+}
+
+
+.loading-card span {
+
+  color: var(--app-muted, #718096);
+
+  font-size: 10px;
+
+}
+
+
+/* =====================================================
+   EMPTY
+===================================================== */
+
+.empty-card {
+
+  min-height: 230px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  justify-content: center;
+
+  padding: 30px;
+
+  border:
+      1px dashed
+      var(--app-border, rgba(255,255,255,.09));
+
+  border-radius: 15px;
+
+  background:
+      var(--app-surface, #101b2b);
+
   text-align: center;
-  padding: 40px;
-  color: #64748b;
-  background: #161e2e;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-.empty-state i { font-size: 2.5rem; margin-bottom: 10px; color: #475569; }
 
-@media (max-width: 768px) {
-  .app-main {
-    max-width: 100% !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 16px 12px !important;
-  }
-  .header-inner {
-    max-width: 100% !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 12px 14px !important;
-  }
-  .menu-toggle { display: block !important; }
-  .nav-buttons {
-    display: none !important;
-    position: absolute !important;
-    top: 100% !important;
-    left: 0 !important;
-    width: 100% !important;
-    background: #0f172a !important;
-    flex-direction: column !important;
-    padding: 16px !important;
-    gap: 8px !important;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
-    z-index: 1000 !important;
-  }
-  .nav-buttons.show { display: flex !important; }
-  .btn-nav { width: 100% !important; justify-content: flex-start !important; padding: 12px 14px !important; font-size: 0.9rem !important; }
-  .salary-card { padding: 14px !important; flex-direction: column; align-items: flex-start; gap: 12px; }
-  .salary-action { width: 100%; justify-content: space-between; }
 }
+
+
+.empty-icon {
+
+  width: 55px;
+
+  height: 55px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  margin-bottom: 12px;
+
+  border-radius: 15px;
+
+  color: #64748b;
+
+  background:
+      rgba(100,116,139,.09);
+
+  font-size: 22px;
+
+}
+
+
+.empty-card h3 {
+
+  margin: 0;
+
+  color: var(--app-heading, #e2e8f0);
+
+  font-size: 14px;
+
+}
+
+
+.empty-card p {
+
+  max-width: 330px;
+
+  margin: 6px 0 0;
+
+  color: var(--app-muted, #718096);
+
+  font-size: 11px;
+
+  line-height: 1.5;
+
+}
+
+
+/* =====================================================
+   LIGHT THEME
+===================================================== */
+
+:global(body.light-theme) {
+
+  --app-text: #1e293b;
+
+  --app-heading: #0f172a;
+
+  --app-muted: #64748b;
+
+  --app-border: #e2e8f0;
+
+  --app-surface: #ffffff;
+
+  --app-input: #f8fafc;
+
+}
+
+
+/* =====================================================
+   MOBILE
+===================================================== */
+
+@media (max-width: 850px) {
+
+  .salary-page {
+
+    padding: 22px 16px 30px;
+
+  }
+
+
+  .form-grid {
+
+    grid-template-columns:
+      repeat(2, 1fr);
+
+  }
+
+}
+
+
+@media (max-width: 600px) {
+
+  .salary-page {
+
+    padding:
+        17px 12px 28px;
+
+  }
+
+
+  .page-heading {
+
+    align-items: flex-start;
+
+    margin-bottom: 20px;
+
+  }
+
+
+  .heading-left {
+
+    gap: 11px;
+
+  }
+
+
+  .page-icon {
+
+    width: 45px;
+
+    height: 45px;
+
+    border-radius: 13px;
+
+    font-size: 17px;
+
+  }
+
+
+  .page-heading h1 {
+
+    font-size: 21px;
+
+  }
+
+
+  .page-heading p {
+
+    font-size: 11px;
+
+  }
+
+
+  .refresh-button {
+
+    width: 40px;
+
+    height: 40px;
+
+    padding: 0;
+
+    justify-content: center;
+
+  }
+
+
+  .refresh-button span {
+
+    display: none;
+
+  }
+
+
+  .upload-card {
+
+    padding: 16px;
+
+    border-radius: 15px;
+
+  }
+
+
+  .card-header {
+
+    align-items: flex-start;
+
+  }
+
+
+  .card-title h2 {
+
+    font-size: 13px;
+
+  }
+
+
+  .card-title p {
+
+    font-size: 10px;
+
+  }
+
+
+  .admin-badge {
+
+    display: none;
+
+  }
+
+
+  .form-grid {
+
+    grid-template-columns: 1fr;
+
+  }
+
+
+  .upload-button {
+
+    width: 100%;
+
+  }
+
+
+  .overview-grid {
+
+    grid-template-columns: 1fr;
+
+    gap: 8px;
+
+    margin-bottom: 22px;
+
+  }
+
+
+  .overview-card {
+
+    padding: 13px;
+
+  }
+
+
+  .salary-card {
+
+    flex-direction: column;
+
+    align-items: stretch;
+
+    gap: 13px;
+
+    padding: 14px;
+
+  }
+
+
+  .salary-main {
+
+    align-items: flex-start;
+
+  }
+
+
+  .salary-title-row {
+
+    gap: 7px;
+
+  }
+
+
+  .salary-values {
+
+    flex-wrap: wrap;
+
+  }
+
+
+  .salary-action {
+
+    width: 100%;
+
+  }
+
+
+  .download-button {
+
+    width: 100%;
+
+    justify-content: center;
+
+  }
+
+
+  .list-header h2 {
+
+    font-size: 17px;
+
+  }
+
+}
+
 </style>

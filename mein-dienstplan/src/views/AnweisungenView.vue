@@ -1,353 +1,1401 @@
 <template>
-  <div class="page-container">
-    <header class="app-header">
-      <div class="header-inner">
-        <!-- Profil-Link -->
-        <router-link to="/profile" class="user-info user-info-link">
-          <div class="avatar-icon">
-            <i class="fa-solid fa-user-gear"></i>
-          </div>
-          <div class="user-details">
-            <span class="user-name">{{ userName }}</span>
-            <span class="user-role">Mitarbeiter Portal</span>
-          </div>
-        </router-link>
+  <AppShell
+      :user-name="userName"
+      :notifications="notifications"
+      :unread-count="unreadNotifications.length"
+      :is-light-mode="isLightMode"
+      page-title="Anweisungen"
+      @mark-read="markAsRead"
+      @mark-all-read="markAllAsRead"
+      @toggle-theme="toggleLightMode"
+  >
 
-        <button class="menu-toggle" @click="isMobileMenuOpen = !isMobileMenuOpen" aria-label="Menü öffnen">
-          <i class="fa-solid" :class="isMobileMenuOpen ? 'fa-xmark' : 'fa-bars'"></i>
-        </button>
+    <main class="instructions-page">
 
-        <nav class="nav-buttons" :class="{ show: isMobileMenuOpen }">
-          <router-link to="/home" class="btn-nav" @click="isMobileMenuOpen = false">
-            <i class="fa-solid fa-calendar-days"></i> Home
-          </router-link>
-          <router-link to="/antraege" class="btn-nav" @click="isMobileMenuOpen = false">
-            <i class="fa-solid fa-file-pen"></i> Anträge
-          </router-link>
-          <router-link to="/anweisungen" class="btn-nav active" @click="isMobileMenuOpen = false">
-            <i class="fa-solid fa-file-pdf"></i> Anweisungen
-          </router-link>
-          <router-link to="/gehalt" class="btn-nav" @click="isMobileMenuOpen = false">
-            <i class="fa-solid fa-file-invoice-dollar"></i> Gehalt
-          </router-link>
-          <router-link to="/kontakt" class="btn-nav" @click="isMobileMenuOpen = false">
-            <i class="fa-solid fa-paper-plane"></i> Büro Kontakt
-          </router-link>
-          <router-link to="/profile" class="btn-nav" @click="isMobileMenuOpen = false">
-            <i class="fa-solid fa-user"></i> Profil
-          </router-link>
-          <button class="btn-nav btn-logout" @click="handleLogout">
-            <i class="fa-solid fa-right-from-bracket"></i> Logout
-          </button>
-        </nav>
-      </div>
-    </header>
-
-    <main class="app-main">
-      <section class="card">
-        <div class="card-header">
-          <div class="card-icon red">
-            <i class="fa-solid fa-file-pdf"></i>
-          </div>
-          <div>
-            <h2>Dienstanweisungen & Dokumente</h2>
-            <p class="card-subtitle">Offizielle Richtlinien und PDFs vom Büro</p>
-          </div>
+      <!-- PAGE HEADER -->
+      <section class="page-header">
+        <div class="page-header-icon">
+          <i class="fa-solid fa-file-lines"></i>
         </div>
 
-        <div class="pdf-list">
-          <!-- Lade-Animation -->
-          <div v-if="loading" class="text-center" style="padding: 20px; color: #94a3b8;">
-            Lade Dokumente...
-          </div>
-
-          <!-- Wenn Dokumente vorhanden sind -->
-          <div v-for="doc in pdfDocuments" :key="doc.id" class="pdf-item">
-            <div class="pdf-info">
-              <i class="fa-regular fa-file-pdf pdf-icon"></i>
-              <div class="pdf-text-details">
-                <strong>{{ doc.title }}</strong>
-                <p class="pdf-content-text" v-if="doc.content">{{ doc.content }}</p>
-                <span class="pdf-meta">Von: {{ doc.sender || 'Admin' }} | Datum: {{ formatDate(doc.created_at) }}</span>
-              </div>
-            </div>
-
-            <!-- Download / Öffnen Button (Nur wenn eine Datei angehängt wurde) -->
-            <a v-if="doc.file_url" :href="doc.file_url" target="_blank" class="btn-download">
-              <i class="fa-solid fa-download"></i>
-              <span>PDF Öffnen</span>
-            </a>
-            <span v-else class="no-file-badge">Nur Nachricht</span>
-          </div>
-
-          <!-- Fallback falls keine Nachrichten/Dokumente da sind -->
-          <div v-if="!loading && pdfDocuments.length === 0" class="text-center" style="padding: 20px; color: #64748b;">
-            Keine Dienstanweisungen vorhanden.
-          </div>
+        <div class="page-header-text">
+          <span class="page-kicker">MITARBEITER PORTAL</span>
+          <h1>Dienstanweisungen</h1>
+          <p>
+            Offizielle Richtlinien, Informationen und Dokumente vom Büro.
+          </p>
         </div>
       </section>
+
+
+      <!-- DOCUMENT CARD -->
+      <section class="documents-card">
+
+        <div class="documents-header">
+
+          <div class="documents-title">
+            <div class="documents-icon">
+              <i class="fa-solid fa-folder-open"></i>
+            </div>
+
+            <div>
+              <h2>Dokumente & Informationen</h2>
+              <p>
+                Hier findest du alle aktuellen Dienstanweisungen.
+              </p>
+            </div>
+          </div>
+
+          <div class="document-count" v-if="!loading">
+            <i class="fa-solid fa-file"></i>
+            {{ pdfDocuments.length }}
+            {{ pdfDocuments.length === 1 ? 'Dokument' : 'Dokumente' }}
+          </div>
+
+        </div>
+
+
+        <!-- LOADING -->
+        <div
+            v-if="loading"
+            class="state-box"
+        >
+          <div class="loading-spinner">
+            <i class="fa-solid fa-circle-notch fa-spin"></i>
+          </div>
+
+          <strong>Dokumente werden geladen</strong>
+
+          <span>
+            Bitte einen Moment warten...
+          </span>
+        </div>
+
+
+        <!-- DOCUMENT LIST -->
+        <div
+            v-else-if="pdfDocuments.length"
+            class="documents-list"
+        >
+
+          <article
+              v-for="doc in pdfDocuments"
+              :key="doc.id"
+              class="document-item"
+          >
+
+            <div class="document-main">
+
+              <div class="document-file-icon">
+                <i
+                    class="fa-solid"
+                    :class="doc.file_url
+                    ? 'fa-file-pdf'
+                    : 'fa-file-lines'"
+                ></i>
+              </div>
+
+              <div class="document-info">
+
+                <div class="document-title-row">
+                  <h3>
+                    {{ doc.title || 'Dienstanweisung' }}
+                  </h3>
+
+                  <span
+                      v-if="doc.file_url"
+                      class="file-type"
+                  >
+                    PDF
+                  </span>
+
+                  <span
+                      v-else
+                      class="message-type"
+                  >
+                    INFO
+                  </span>
+                </div>
+
+
+                <p
+                    v-if="doc.content"
+                    class="document-content"
+                >
+                  {{ doc.content }}
+                </p>
+
+
+                <div class="document-meta">
+
+                  <span>
+                    <i class="fa-solid fa-user"></i>
+                    {{ doc.sender || 'Admin' }}
+                  </span>
+
+                  <span class="meta-separator">
+                    •
+                  </span>
+
+                  <span>
+                    <i class="fa-regular fa-calendar"></i>
+                    {{ formatDate(doc.created_at) }}
+                  </span>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <!-- ACTION -->
+            <div class="document-action">
+
+              <a
+                  v-if="doc.file_url"
+                  :href="doc.file_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="document-button"
+              >
+                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+
+                <span>PDF öffnen</span>
+              </a>
+
+              <span
+                  v-else
+                  class="no-file"
+              >
+                <i class="fa-solid fa-circle-info"></i>
+                Nur Information
+              </span>
+
+            </div>
+
+          </article>
+
+        </div>
+
+
+        <!-- EMPTY -->
+        <div
+            v-else
+            class="state-box empty-state"
+        >
+          <div class="empty-icon">
+            <i class="fa-regular fa-folder-open"></i>
+          </div>
+
+          <strong>Keine Anweisungen vorhanden</strong>
+
+          <span>
+            Aktuell wurden keine Dienstanweisungen veröffentlicht.
+          </span>
+        </div>
+
+      </section>
+
     </main>
-  </div>
+
+  </AppShell>
 </template>
 
+
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+
+import {
+  ref,
+  computed,
+  onMounted
+} from 'vue'
+
+import AppShell from '@/components/AppShell.vue'
+
 import { supabase } from '@/config/supabase.js'
 
-const router = useRouter()
-const isMobileMenuOpen = ref(false)
-const pdfDocuments = ref([])
-const loading = ref(true)
+
+/* =========================================================
+   USER
+========================================================= */
+
 const userName = ref('Mitarbeiter')
 
-onMounted(async () => {
-  // Benutzername aus dem LocalStorage auslesen
-  const userJson = localStorage.getItem('currentUser')
-  if (userJson) {
-    try {
-      const user = JSON.parse(userJson)
-      if (user && user.name) {
-        userName.value = user.name
-      }
-    } catch (e) {
-      console.error('Fehler beim Parsen des Benutzers', e)
-    }
-  }
 
-  await fetchAnnouncements()
+/* =========================================================
+   THEME
+   AppShell bleibt zentrale Stelle.
+========================================================= */
+
+const isLightMode = ref(false)
+
+const toggleLightMode = () => {
+
+  isLightMode.value = !isLightMode.value
+
+  localStorage.setItem(
+      'theme',
+      isLightMode.value
+          ? 'light'
+          : 'dark'
+  )
+
+}
+
+
+/* =========================================================
+   DOCUMENTS
+========================================================= */
+
+const pdfDocuments = ref([])
+
+const loading = ref(true)
+
+
+/* =========================================================
+   NOTIFICATIONS
+========================================================= */
+
+const notifications = ref([])
+
+
+const unreadNotifications = computed(() => {
+
+  return notifications.value.filter(
+      notification =>
+          !notification.read
+  )
+
 })
 
-const fetchAnnouncements = async () => {
-  loading.value = true
-  const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .order('created_at', { ascending: false })
 
-  if (!error && data) {
-    pdfDocuments.value = data
+const markAsRead = (id) => {
+
+  notifications.value =
+      notifications.value.map(
+          notification =>
+              notification.id === id
+                  ? {
+                    ...notification,
+                    read: true
+                  }
+                  : notification
+      )
+
+}
+
+
+const markAllAsRead = () => {
+
+  notifications.value =
+      notifications.value.map(
+          notification => ({
+            ...notification,
+            read: true
+          })
+      )
+
+}
+
+
+/* =========================================================
+   LOAD USER
+========================================================= */
+
+const loadUser = () => {
+
+  const userJson =
+      localStorage.getItem('currentUser')
+
+  if (!userJson) {
+    return
   }
-  loading.value = false
+
+  try {
+
+    const user =
+        JSON.parse(userJson)
+
+    if (
+        user &&
+        user.name
+    ) {
+
+      userName.value =
+          user.name
+
+    }
+
+  } catch (error) {
+
+    console.error(
+        'Fehler beim Laden des Benutzers:',
+        error
+    )
+
+  }
+
 }
 
-const formatDate = (dateString) => {
-  if (!dateString) return '-'
-  const d = new Date(dateString)
-  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+
+/* =========================================================
+   LOAD THEME
+========================================================= */
+
+const loadTheme = () => {
+
+  const savedTheme =
+      localStorage.getItem('theme')
+
+  isLightMode.value =
+      savedTheme === 'light'
+
 }
 
-const handleLogout = () => {
-  localStorage.removeItem('currentUser')
-  router.push('/login')
+
+/* =========================================================
+   LOAD DOCUMENTS
+========================================================= */
+
+const fetchAnnouncements =
+    async () => {
+
+      loading.value = true
+
+      try {
+
+        const {
+          data,
+          error
+        } = await supabase
+            .from('messages')
+            .select('*')
+            .order(
+                'created_at',
+                {
+                  ascending: false
+                }
+            )
+
+
+        if (error) {
+
+          console.error(
+              'Fehler beim Laden der Anweisungen:',
+              error
+          )
+
+          pdfDocuments.value = []
+
+          return
+
+        }
+
+
+        if (data) {
+
+          pdfDocuments.value =
+              data
+
+        }
+
+      } catch (error) {
+
+        console.error(
+            'Unerwarteter Fehler:',
+            error
+        )
+
+        pdfDocuments.value = []
+
+      } finally {
+
+        loading.value = false
+
+      }
+
+    }
+
+
+/* =========================================================
+   DATE
+========================================================= */
+
+const formatDate = (
+    dateString
+) => {
+
+  if (!dateString) {
+    return '-'
+  }
+
+  const date =
+      new Date(dateString)
+
+  if (
+      Number.isNaN(
+          date.getTime()
+      )
+  ) {
+
+    return '-'
+
+  }
+
+  return date.toLocaleDateString(
+      'de-DE',
+      {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      }
+  )
+
 }
+
+
+/* =========================================================
+   INIT
+========================================================= */
+
+onMounted(
+    async () => {
+
+      loadUser()
+
+      loadTheme()
+
+      await fetchAnnouncements()
+
+    }
+)
+
 </script>
 
+
 <style scoped>
-*, *::before, *::after {
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
-}
 
-/* Base Layout & Desktop-Zentrierung */
-.page-container {
-  min-height: 100vh;
-  min-height: 100dvh;
+/* =========================================================
+   PAGE
+   Farben kommen zentral aus style.css
+========================================================= */
+
+.instructions-page {
+
   width: 100%;
-  background: #0b0f19;
-  color: #f8fafc;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  display: flex;
-  flex-direction: column;
-  overflow-x: hidden;
-}
+  max-width: 1180px;
 
-/* Full-Width Header */
-.app-header {
-  background: rgba(15, 23, 42, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-  width: 100%;
-}
-
-.header-inner {
-  max-width: 1200px;
   margin: 0 auto;
-  padding: 10px 16px;
+
+  padding:
+      28px
+      24px
+      40px;
+
+  color: var(--text-main);
+
+}
+
+
+/* =========================================================
+   PAGE HEADER
+========================================================= */
+
+.page-header {
+
   display: flex;
-  justify-content: space-between;
+
   align-items: center;
+
+  gap: 16px;
+
+  margin-bottom: 24px;
+
 }
 
-.user-info-link { text-decoration: none; }
-.user-info { display: flex; align-items: center; gap: 10px; }
 
-.avatar-icon {
-  width: 38px;
-  height: 38px;
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
-}
+.page-header-icon {
 
-.user-details { display: flex; flex-direction: column; text-align: left; }
-.user-name { font-size: 0.85rem; font-weight: 600; color: #f8fafc; }
-.user-role { font-size: 0.7rem; color: #94a3b8; }
+  width: 54px;
+  height: 54px;
 
-.menu-toggle {
-  display: none;
-  background: none;
-  border: none;
-  font-size: 1.4rem;
-  color: #f8fafc;
-  cursor: pointer;
-  padding: 6px;
-}
+  flex: 0 0 54px;
 
-.nav-buttons { display: flex; gap: 8px; }
+  display: grid;
 
-.btn-nav {
-  padding: 8px 14px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #cbd5e1;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s ease;
-  touch-action: manipulation;
-}
+  place-items: center;
 
-.btn-nav:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-.btn-nav.active { background: #2563eb; border-color: #3b82f6; color: #fff; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
-.btn-logout { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border-color: rgba(239, 68, 68, 0.2); cursor: pointer; }
-
-/* Zentrierter Hauptbereich für PC & Mobile */
-.app-main {
-  flex: 1;
-  padding: 20px 16px;
-  max-width: 800px;
-  width: 100%;
-  margin: 0 auto;
-  box-sizing: border-box;
-}
-
-.card {
-  background: #161e2e;
   border-radius: 16px;
-  padding: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  text-align: left;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+
+  background:
+      color-mix(
+          in srgb,
+          var(--danger) 12%,
+          var(--bg-card)
+      );
+
+  border:
+      1px solid
+      color-mix(
+          in srgb,
+          var(--danger) 24%,
+          var(--border-color)
+      );
+
+  color: var(--danger);
+
+  font-size: 21px;
+
 }
 
-.card-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
 
-.card-icon.red {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+.page-header-text {
+
+  min-width: 0;
+
+}
+
+
+.page-kicker {
+
+  display: block;
+
+  margin-bottom: 4px;
+
+  color: var(--accent);
+
+  font-size: 10px;
+
+  font-weight: 800;
+
+  letter-spacing: .14em;
+
+}
+
+
+.page-header h1 {
+
+  margin: 0;
+
+  color: var(--text-main);
+
+  font-size: 26px;
+
+  font-weight: 800;
+
+  letter-spacing: -.035em;
+
+}
+
+
+.page-header p {
+
+  margin: 5px 0 0;
+
+  color: var(--text-secondary);
+
+  font-size: 13px;
+
+}
+
+
+/* =========================================================
+   MAIN CARD
+========================================================= */
+
+.documents-card {
+
+  width: 100%;
+
+  overflow: hidden;
+
+  background: var(--bg-card);
+
+  border:
+      1px solid
+      var(--border-color);
+
+  border-radius: 22px;
+
+  box-shadow: var(--shadow);
+
+}
+
+
+/* =========================================================
+   CARD HEADER
+========================================================= */
+
+.documents-header {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 20px;
+
+  padding: 20px 22px;
+
+  border-bottom:
+      1px solid
+      var(--border-color);
+
+}
+
+
+.documents-title {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 13px;
+
+  min-width: 0;
+
+}
+
+
+.documents-icon {
+
+  width: 42px;
+  height: 42px;
+
+  flex: 0 0 42px;
+
+  display: grid;
+
+  place-items: center;
+
+  border-radius: 12px;
+
+  background:
+      color-mix(
+          in srgb,
+          var(--accent) 10%,
+          var(--bg-card)
+      );
+
+  border:
+      1px solid
+      color-mix(
+          in srgb,
+          var(--accent) 20%,
+          var(--border-color)
+      );
+
+  color: var(--accent);
+
+}
+
+
+.documents-title h2 {
+
+  margin: 0;
+
+  color: var(--text-main);
+
+  font-size: 15px;
+
+  font-weight: 750;
+
+}
+
+
+.documents-title p {
+
+  margin: 3px 0 0;
+
+  color: var(--text-secondary);
+
+  font-size: 12px;
+
+}
+
+
+.document-count {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 7px;
+
+  flex-shrink: 0;
+
+  padding:
+      7px
+      10px;
+
+  border-radius: 9px;
+
+  background: var(--surface-soft);
+
+  border:
+      1px solid
+      var(--border-color);
+
+  color: var(--text-secondary);
+
+  font-size: 11px;
+
+  font-weight: 700;
+
+}
+
+
+/* =========================================================
+   LIST
+========================================================= */
+
+.documents-list {
+
+  display: flex;
+
+  flex-direction: column;
+
+}
+
+
+/* =========================================================
+   DOCUMENT
+========================================================= */
+
+.document-item {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 20px;
+
+  padding:
+      18px
+      22px;
+
+  border-bottom:
+      1px solid
+      var(--border-color);
+
+  transition:
+      background-color .2s ease,
+      border-color .2s ease;
+
+}
+
+
+.document-item:last-child {
+
+  border-bottom: 0;
+
+}
+
+
+.document-item:hover {
+
+  background:
+      var(--bg-card-hover);
+
+}
+
+
+.document-main {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 14px;
+
+  min-width: 0;
+
+  flex: 1;
+
+}
+
+
+/* =========================================================
+   FILE ICON
+========================================================= */
+
+.document-file-icon {
+
+  width: 46px;
+  height: 46px;
+
+  flex: 0 0 46px;
+
+  display: grid;
+
+  place-items: center;
+
+  border-radius: 13px;
+
+  background:
+      color-mix(
+          in srgb,
+          var(--danger) 10%,
+          var(--bg-card)
+      );
+
+  border:
+      1px solid
+      color-mix(
+          in srgb,
+          var(--danger) 20%,
+          var(--border-color)
+      );
+
+  color: var(--danger);
+
+  font-size: 18px;
+
+}
+
+
+/* =========================================================
+   INFO
+========================================================= */
+
+.document-info {
+
+  min-width: 0;
+
+  flex: 1;
+
+}
+
+
+.document-title-row {
+
+  display: flex;
+
+  align-items: center;
+
+  flex-wrap: wrap;
+
+  gap: 8px;
+
+}
+
+
+.document-title-row h3 {
+
+  margin: 0;
+
+  color: var(--text-main);
+
+  font-size: 14px;
+
+  font-weight: 750;
+
+  line-height: 1.35;
+
+}
+
+
+.file-type,
+.message-type {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  padding:
+      3px
+      7px;
+
+  border-radius: 6px;
+
+  font-size: 8px;
+
+  font-weight: 850;
+
+  letter-spacing: .06em;
+
+}
+
+
+.file-type {
+
+  background:
+      color-mix(
+          in srgb,
+          var(--danger) 10%,
+          var(--bg-card)
+      );
+
+  color: var(--danger);
+
+}
+
+
+.message-type {
+
+  background:
+      color-mix(
+          in srgb,
+          var(--accent) 10%,
+          var(--bg-card)
+      );
+
+  color: var(--accent);
+
+}
+
+
+.document-content {
+
+  margin:
+      5px
+      0
+      4px;
+
+  color: var(--text-secondary);
+
+  font-size: 12px;
+
+  line-height: 1.5;
+
+  white-space: pre-line;
+
+  word-break: break-word;
+
+}
+
+
+.document-meta {
+
+  display: flex;
+
+  align-items: center;
+
+  flex-wrap: wrap;
+
+  gap: 7px;
+
+  color: var(--text-muted);
+
+  font-size: 10px;
+
+}
+
+
+.document-meta span {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 5px;
+
+}
+
+
+.meta-separator {
+
+  opacity: .5;
+
+}
+
+
+/* =========================================================
+   BUTTON
+========================================================= */
+
+.document-action {
+
+  flex-shrink: 0;
+
+}
+
+
+.document-button {
+
+  min-height: 38px;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 8px;
+
+  padding:
+      0
+      13px;
+
+  border-radius: 10px;
+
+  background:
+      color-mix(
+          in srgb,
+          var(--accent) 10%,
+          var(--bg-card)
+      );
+
+  border:
+      1px solid
+      color-mix(
+          in srgb,
+          var(--accent) 24%,
+          var(--border-color)
+      );
+
+  color: var(--accent);
+
+  text-decoration: none;
+
+  font-size: 11px;
+
+  font-weight: 750;
+
+  transition:
+      background-color .2s ease,
+      color .2s ease,
+      border-color .2s ease,
+      transform .15s ease;
+
+}
+
+
+.document-button:hover {
+
+  background: var(--accent);
+
+  border-color: var(--accent);
+
+  color: #fff;
+
+  transform: translateY(-1px);
+
+}
+
+
+.no-file {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 6px;
+
+  padding:
+      8px
+      10px;
+
+  border-radius: 8px;
+
+  background: var(--surface-soft);
+
+  border:
+      1px solid
+      var(--border-color);
+
+  color: var(--text-muted);
+
+  font-size: 10px;
+
+  white-space: nowrap;
+
+}
+
+
+/* =========================================================
+   STATES
+========================================================= */
+
+.state-box {
+
+  min-height: 260px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 8px;
+
+  padding: 30px;
+
+  text-align: center;
+
+}
+
+
+.state-box strong {
+
+  color: var(--text-main);
+
+  font-size: 14px;
+
+}
+
+
+.state-box span {
+
+  color: var(--text-muted);
+
+  font-size: 11px;
+
+}
+
+
+.loading-spinner {
+
   width: 44px;
   height: 44px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.25rem;
-  flex-shrink: 0;
+
+  display: grid;
+
+  place-items: center;
+
+  margin-bottom: 5px;
+
+  border-radius: 13px;
+
+  background:
+      color-mix(
+          in srgb,
+          var(--accent) 10%,
+          var(--bg-card)
+      );
+
+  color: var(--accent);
+
+  font-size: 18px;
+
 }
 
-.card h2 { font-size: 1.15rem; font-weight: 700; margin: 0 0 2px 0; color: #f8fafc; }
-.card-subtitle { font-size: 0.8rem; color: #94a3b8; margin: 0; }
 
-.pdf-list { display: flex; flex-direction: column; gap: 12px; }
+.empty-icon {
 
-.pdf-item {
-  background: #0b0f19;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 14px;
-  transition: all 0.2s ease;
+  width: 48px;
+  height: 48px;
+
+  display: grid;
+
+  place-items: center;
+
+  margin-bottom: 5px;
+
+  border-radius: 14px;
+
+  background: var(--surface-soft);
+
+  border:
+      1px solid
+      var(--border-color);
+
+  color: var(--text-muted);
+
+  font-size: 19px;
+
 }
 
-.pdf-item:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-  background: #0d1322;
-}
 
-.pdf-info { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
-.pdf-icon { font-size: 1.8rem; color: #ef4444; flex-shrink: 0; }
-.pdf-text-details { display: flex; flex-direction: column; text-align: left; width: 100%; min-width: 0; }
-.pdf-info strong { font-size: 0.92rem; color: #f8fafc; font-weight: 600; line-height: 1.3; }
-.pdf-content-text { font-size: 0.82rem; color: #cbd5e1; margin: 4px 0 2px 0; white-space: pre-line; word-break: break-word; }
-.pdf-meta { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+/* =========================================================
+   MOBILE
+========================================================= */
 
-.btn-download {
-  background: rgba(37, 99, 235, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(37, 99, 235, 0.3);
-  padding: 9px 14px;
-  border-radius: 8px;
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-  touch-action: manipulation;
-}
-
-.btn-download:hover { background: #2563eb; color: #fff; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
-
-.no-file-badge { font-size: 0.75rem; color: #64748b; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
-
-/* Mobile Anpassungen */
 @media (max-width: 768px) {
-  .menu-toggle { display: block; }
 
-  .nav-buttons {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    width: 100%;
-    background: #0f172a;
+  .instructions-page {
+
+    padding:
+        18px
+        12px
+        30px;
+
+  }
+
+
+  .page-header {
+
+    gap: 12px;
+
+    margin-bottom: 17px;
+
+  }
+
+
+  .page-header-icon {
+
+    width: 45px;
+    height: 45px;
+
+    flex-basis: 45px;
+
+    border-radius: 13px;
+
+    font-size: 17px;
+
+  }
+
+
+  .page-kicker {
+
+    font-size: 8px;
+
+  }
+
+
+  .page-header h1 {
+
+    font-size: 21px;
+
+  }
+
+
+  .page-header p {
+
+    font-size: 11px;
+
+  }
+
+
+  .documents-card {
+
+    border-radius: 17px;
+
+  }
+
+
+  .documents-header {
+
+    align-items: flex-start;
+
+    padding: 15px;
+
+  }
+
+
+  .documents-icon {
+
+    width: 37px;
+    height: 37px;
+
+    flex-basis: 37px;
+
+    border-radius: 10px;
+
+  }
+
+
+  .documents-title h2 {
+
+    font-size: 13px;
+
+  }
+
+
+  .documents-title p {
+
+    font-size: 10px;
+
+  }
+
+
+  .document-count {
+
+    font-size: 9px;
+
+    padding:
+        6px
+        8px;
+
+  }
+
+
+  .document-item {
+
     flex-direction: column;
-    padding: 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    gap: 10px;
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+
+    align-items: stretch;
+
+    gap: 12px;
+
+    padding: 14px;
+
   }
 
-  .nav-buttons.show { display: flex; }
 
-  .btn-nav {
+  .document-main {
+
+    align-items: flex-start;
+
+    gap: 11px;
+
+  }
+
+
+  .document-file-icon {
+
+    width: 40px;
+    height: 40px;
+
+    flex-basis: 40px;
+
+    border-radius: 11px;
+
+    font-size: 16px;
+
+  }
+
+
+  .document-title-row h3 {
+
+    font-size: 13px;
+
+  }
+
+
+  .document-content {
+
+    font-size: 11px;
+
+  }
+
+
+  .document-meta {
+
+    font-size: 9px;
+
+  }
+
+
+  .document-action {
+
     width: 100%;
-    justify-content: flex-start;
-    padding: 12px 16px;
+
   }
 
-  .app-main { padding: 14px 12px; }
-  .card { padding: 18px 16px; border-radius: 14px; }
 
-  .pdf-item { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .btn-download, .no-file-badge { width: 100%; justify-content: center; text-align: center; }
+  .document-button,
+  .no-file {
+
+    width: 100%;
+
+    min-height: 39px;
+
+  }
+
+
+  .state-box {
+
+    min-height: 220px;
+
+  }
+
 }
+
 </style>

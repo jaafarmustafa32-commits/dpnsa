@@ -6,110 +6,380 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import { supabase } from '@/config/supabase.js' // Passe den Pfad an, falls er bei dir anders ist
+import { supabase } from '@/config/supabase.js'
 
-// Hilfsfunktion, um den Public Key für den Browser kompatibel zu machen
+
+/* =========================================================
+   PUSH NOTIFICATIONS
+========================================================= */
+
 const urlBase64ToUint8Array = (base64String) => {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const padding = '='.repeat(
+      (4 - (base64String.length % 4)) % 4
+  )
+
+  const base64 = (
+      base64String + padding
+  )
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+
   const rawData = window.atob(base64)
-  const outputArray = new Uint8Array(rawData.length)
+
+  const outputArray = new Uint8Array(
+      rawData.length
+  )
+
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i)
   }
+
   return outputArray
 }
 
-// Funktion zum Registrieren der Push-Benachrichtigungen
+
+/* =========================================================
+   PUSH REGISTRIEREN
+========================================================= */
+
 const registerPushNotifications = async () => {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.log('Push-Benachrichtigungen werden von diesem Browser nicht unterstützt.')
+
+  if (
+      !('serviceWorker' in navigator) ||
+      !('PushManager' in window)
+  ) {
+    console.log(
+        'Push-Benachrichtigungen werden von diesem Browser nicht unterstützt.'
+    )
+
     return
   }
 
   try {
-    // 1. Service Worker aus dem public-Ordner registrieren
-    const registration = await navigator.serviceWorker.register('/sw.js')
 
-    // 2. Erlaubnis beim Nutzer anfragen (Browser zeigt das Pop-up)
-    const permissionResult = await Notification.requestPermission()
+    const registration =
+        await navigator.serviceWorker.register('/sw.js')
+
+
+    const permissionResult =
+        await Notification.requestPermission()
+
+
     if (permissionResult !== 'granted') {
-      console.log('Benachrichtigungs-Berechtigung wurde verweigert.')
+
+      console.log(
+          'Benachrichtigungs-Berechtigung wurde verweigert.'
+      )
+
       return
     }
 
-    // 3. Deinen Public Key einbinden
-    const publicVapidKey = 'BCiQsCC6zBIpqZkwGLpGOKpT-tzIFkPlHSGu_nlg0D3sqtl0dR06QW_jV8OsgEkLSH3-_hezK6kO_6Ih6Jo68tA'
-    const convertedVapidKey = urlBase64ToUint8Array(publicVapidKey)
 
-    // 4. Push-Abonnement beim Browser anfordern
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: convertedVapidKey
-    })
+    const publicVapidKey =
+        'BCiQsCC6zBIpqZkwGLpGOKpT-tzIFkPlHSGu_nlg0D3sqtl0dR06QW_jV8OsgEkLSH3-_hezK6kO_6Ih6Jo68tA'
 
-    // 5. In Supabase speichern (für den aktuell eingeloggten Mitarbeiter)
-    const { data: { user } } = await supabase.auth.getUser()
 
-    if (user) {
-      const { error } = await supabase.from('push_subscriptions').upsert({
-        user_id: user.id,
-        subscription: subscription
-      }, { onConflict: 'user_id' })
+    const convertedVapidKey =
+        urlBase64ToUint8Array(publicVapidKey)
 
-      if (error) {
-        console.error('Fehler beim Speichern des Push-Abos in Supabase:', error)
-      } else {
-        console.log('Push-Abo erfolgreich erstellt und in Supabase gespeichert!')
-      }
+
+    const subscription =
+        await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        })
+
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser()
+
+
+    if (!user) {
+
+      console.log(
+          'Kein Nutzer eingeloggt – Push-Abo wurde nicht gespeichert.'
+      )
+
+      return
+    }
+
+
+    const { error } =
+        await supabase
+            .from('push_subscriptions')
+            .upsert(
+                {
+                  user_id: user.id,
+                  subscription: subscription
+                },
+                {
+                  onConflict: 'user_id'
+                }
+            )
+
+
+    if (error) {
+
+      console.error(
+          'Fehler beim Speichern des Push-Abos:',
+          error
+      )
+
     } else {
-      console.log('Kein Nutzer eingeloggt – Abo konnte nicht mit Nutzer verknüpft werden.')
+
+      console.log(
+          'Push-Abo erfolgreich erstellt und gespeichert.'
+      )
+
     }
 
   } catch (error) {
-    console.error('Fehler bei der Push-Registrierung:', error)
+
+    console.error(
+        'Fehler bei der Push-Registrierung:',
+        error
+    )
+
   }
+
 }
 
-// Sobald die App startet, wird die Registrierung angestoßen
+
+/* =========================================================
+   APP START
+========================================================= */
+
 onMounted(() => {
+
   registerPushNotifications()
+
 })
 </script>
 
+
 <style>
-/* Globale Einstellungen */
-* {
+/* =========================================================
+   GLOBAL RESET
+========================================================= */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+
+/* =========================================================
+   HTML / BODY
+========================================================= */
+
+html {
+  width: 100%;
+  min-height: 100%;
+}
+
+html,
+body {
   margin: 0;
   padding: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+
+  overflow-x: hidden;
+
+  font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
+  background: var(--background);
+  color: var(--text);
+
+  transition:
+      background-color 0.25s ease,
+      color 0.25s ease;
 }
 
-html, body {
-  background-color: #0f172a;
-  color: #f8fafc;
-  min-height: 100vh;
-  width: 100%;
-  overflow-x: hidden;
-}
+
+/* =========================================================
+   APP
+========================================================= */
 
 #app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   width: 100%;
-  max-width: 100% !important; /* Erzwingt die volle Bildschirmbreite */
-  margin: 0 !important;
-  padding: 0 !important;
+  min-height: 100vh;
+
+  margin: 0;
+  padding: 0;
+
+  background: var(--background);
+  color: var(--text);
 }
 
+
+/* =========================================================
+   DEFAULT THEME
+========================================================= */
+
+:root {
+
+  --background: #0b1120;
+  --surface: #111827;
+  --surface-2: #172033;
+
+  --text: #f8fafc;
+  --text-secondary: #aab4c5;
+  --text-muted: #6f7b90;
+
+  --border: rgba(255, 255, 255, 0.08);
+
+  --accent: #7c6ff2;
+
+  --success: #35d39a;
+  --warning: #f4b860;
+  --danger: #ef6678;
+
+}
+
+
+/* =========================================================
+   LIGHT THEME
+========================================================= */
+
+html.light-theme {
+
+  --background: #f5f7fb;
+  --surface: #ffffff;
+  --surface-2: #f0f3f8;
+
+  --text: #172033;
+  --text-secondary: #596579;
+  --text-muted: #8b95a7;
+
+  --border: #e3e8f0;
+
+  --accent: #6d5ce7;
+
+  --success: #25b982;
+  --warning: #e8a63d;
+  --danger: #dc5268;
+
+}
+
+
+/* =========================================================
+   DARK THEME
+========================================================= */
+
+html:not(.light-theme) {
+
+  color-scheme: dark;
+
+}
+
+
+/* =========================================================
+   LIGHT THEME
+========================================================= */
+
+html.light-theme {
+
+  color-scheme: light;
+
+}
+
+
+/* =========================================================
+   FORM ELEMENTS
+========================================================= */
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+
+/* =========================================================
+   LINKS
+========================================================= */
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+
+/* =========================================================
+   IMAGES
+========================================================= */
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+
+/* =========================================================
+   SCROLLBAR
+========================================================= */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
 @media (max-width: 768px) {
-  body, html, #app {
-    width: 100vw !important;
-    max-width: 100vw !important;
-    margin: 0 !important;
-    padding: 0 !important;
+
+  html,
+  body,
+  #app {
+    width: 100%;
+    min-width: 320px;
+    max-width: 100%;
   }
+
 }
 </style>
